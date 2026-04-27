@@ -1,0 +1,13 @@
+{
+  "value_per_socket": {
+    "capex_bom": 0,
+    "capex_installation": 0,
+    "capex_connection": 0,
+    "capex_total": 0,
+    "asset_value": 0
+  },
+  "delivery_capacity_sockets_per_year": {
+    "senior_delivery_manager": 0,
+    "delivery_manager": 0
+  }
+}

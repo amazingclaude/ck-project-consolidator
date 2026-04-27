@@ -36,5 +36,8 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Local business assumptions
+data/assumptions.json
+
 # TypeScript
 *.tsbuildinfo

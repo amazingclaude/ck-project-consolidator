@@ -40,7 +40,12 @@ AI_FOUNDRY_API_VERSION = os.getenv("AI_FOUNDRY_API_VERSION", "2024-05-01-preview
 AI_FOUNDRY_AGENT_NAME = os.getenv("AI_FOUNDRY_AGENT_NAME", "")
 AI_FOUNDRY_AGENT_VERSION = os.getenv("AI_FOUNDRY_AGENT_VERSION", "")
 
-_ASSUMPTIONS_PATH = Path(__file__).parent / "data" / "assumptions.json"
+_ASSUMPTIONS_PATH = Path(
+    os.getenv("ASSUMPTIONS_PATH", Path(__file__).parent / "data" / "assumptions.json")
+)
+if not _ASSUMPTIONS_PATH.is_absolute():
+    _ASSUMPTIONS_PATH = Path(__file__).parent / _ASSUMPTIONS_PATH
+
 with open(_ASSUMPTIONS_PATH) as _f:
     ASSUMPTIONS: dict = json.load(_f)
 
