@@ -1,6 +1,8 @@
 import io
 import json
 import os
+import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +17,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
@@ -30,10 +33,25 @@ app.add_middleware(
 
 AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
 CONTAINER_NAME = os.getenv("AZURE_STORAGE_CONTAINER", "plans")
+AI_FOUNDRY_ENDPOINT = os.getenv("AI_FOUNDRY_ENDPOINT", "")
+AI_FOUNDRY_API_KEY = os.getenv("AI_FOUNDRY_API_KEY", "")
+AI_FOUNDRY_DEPLOYMENT = os.getenv("AI_FOUNDRY_DEPLOYMENT", "")
+AI_FOUNDRY_API_VERSION = os.getenv("AI_FOUNDRY_API_VERSION", "2024-05-01-preview")
+AI_FOUNDRY_AGENT_NAME = os.getenv("AI_FOUNDRY_AGENT_NAME", "")
+AI_FOUNDRY_AGENT_VERSION = os.getenv("AI_FOUNDRY_AGENT_VERSION", "")
 
 _ASSUMPTIONS_PATH = Path(__file__).parent / "data" / "assumptions.json"
 with open(_ASSUMPTIONS_PATH) as _f:
     ASSUMPTIONS: dict = json.load(_f)
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str = Field(min_length=1, max_length=12000)
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage] = Field(min_length=1, max_length=30)
 
 
 # ─── Storage helpers ──────────────────────────────────────────────────────────
@@ -104,6 +122,134 @@ def write_metrics_cache(container, plan_id: str, metrics: dict) -> None:
     blob.upload_blob(json.dumps(metrics), overwrite=True)
 
 
+def build_foundry_chat_url() -> str:
+    endpoint = AI_FOUNDRY_ENDPOINT.rstrip("/")
+    if not endpoint:
+        raise HTTPException(
+            status_code=500,
+            detail="AI_FOUNDRY_ENDPOINT is not configured",
+        )
+
+    if "/openai/v1" in endpoint:
+        if endpoint.endswith("/chat/completions"):
+            return endpoint
+        return f"{endpoint}/chat/completions"
+
+    if "/chat/completions" in endpoint:
+        if "api-version=" in endpoint:
+            return endpoint
+        separator = "&" if "?" in endpoint else "?"
+        return f"{endpoint}{separator}api-version={AI_FOUNDRY_API_VERSION}"
+
+    if AI_FOUNDRY_DEPLOYMENT:
+        return (
+            f"{endpoint}/openai/deployments/{AI_FOUNDRY_DEPLOYMENT}"
+            f"/chat/completions?api-version={AI_FOUNDRY_API_VERSION}"
+        )
+
+    return f"{endpoint}/chat/completions?api-version={AI_FOUNDRY_API_VERSION}"
+
+
+def ask_foundry(messages: list[ChatMessage]) -> str:
+    if "/api/projects/" in AI_FOUNDRY_ENDPOINT:
+        return ask_foundry_agent(messages)
+
+    if not AI_FOUNDRY_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="AI_FOUNDRY_API_KEY is not configured",
+        )
+
+    payload = {
+        "messages": [message.dict() for message in messages],
+        "temperature": 0.4,
+        "max_tokens": 800,
+    }
+    if "/openai/v1" in AI_FOUNDRY_ENDPOINT and AI_FOUNDRY_DEPLOYMENT:
+        payload["model"] = AI_FOUNDRY_DEPLOYMENT
+
+    request = urllib.request.Request(
+        build_foundry_chat_url(),
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "api-key": AI_FOUNDRY_API_KEY,
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(
+            status_code=exc.code,
+            detail=body or "AI Foundry request failed",
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not reach AI Foundry endpoint: {exc.reason}",
+        ) from exc
+
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="AI Foundry returned an unexpected response shape",
+        ) from exc
+
+
+def ask_foundry_agent(messages: list[ChatMessage]) -> str:
+    if not AI_FOUNDRY_AGENT_NAME or not AI_FOUNDRY_AGENT_VERSION:
+        raise HTTPException(
+            status_code=500,
+            detail="AI_FOUNDRY_AGENT_NAME and AI_FOUNDRY_AGENT_VERSION are required for project agent endpoints",
+        )
+
+    try:
+        from azure.ai.projects import AIProjectClient
+        from azure.identity import DefaultAzureCredential
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Install azure-ai-projects>=2.0.0 and azure-identity>=1.17.0 to use AI Foundry project agents",
+        ) from exc
+
+    try:
+        project_client = AIProjectClient(
+            endpoint=AI_FOUNDRY_ENDPOINT,
+            credential=DefaultAzureCredential(),
+        )
+        openai_client = project_client.get_openai_client()
+        response = openai_client.responses.create(
+            input=[message.dict() for message in messages if message.role != "system"],
+            extra_body={
+                "agent_reference": {
+                    "name": AI_FOUNDRY_AGENT_NAME,
+                    "version": AI_FOUNDRY_AGENT_VERSION,
+                    "type": "agent_reference",
+                }
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI Foundry agent request failed: {exc}",
+        ) from exc
+
+    output_text = getattr(response, "output_text", None)
+    if not output_text:
+        raise HTTPException(
+            status_code=502,
+            detail="AI Foundry agent returned an empty response",
+        )
+
+    return output_text
+
+
 # ─── API routes ───────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
@@ -114,6 +260,24 @@ def health():
 @app.get("/api/assumptions")
 def get_assumptions():
     return ASSUMPTIONS
+
+
+@app.post("/api/ai-assistant/chat")
+def chat_with_assistant(request: ChatRequest):
+    for message in request.messages:
+        if message.role not in {"user", "assistant"}:
+            raise HTTPException(status_code=400, detail="Invalid chat message role")
+
+    system_prompt = ChatMessage(
+        role="system",
+        content=(
+            "You are the Connected Kerb planning assistant. Help users analyse "
+            "EV charging infrastructure plans, delivery risks, schedules, costs, "
+            "assumptions, and portfolio trade-offs. Be concise, practical, and "
+            "ask for missing plan context when needed."
+        ),
+    )
+    return {"message": ask_foundry([system_prompt, *request.messages])}
 
 
 @app.get("/api/plans")
