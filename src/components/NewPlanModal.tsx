@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, DragEvent, ChangeEvent } from 'react'
-import { X, Upload, FileText } from 'lucide-react'
+import { X, Upload, FileText, Loader2 } from 'lucide-react'
 import { usePlans } from '../context/PlansContext'
 import type { Plan } from '../context/PlansContext'
 
@@ -20,6 +20,8 @@ export default function NewPlanModal({ isOpen, onClose, planToEdit }: Props) {
   const [name, setName] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -27,13 +29,15 @@ export default function NewPlanModal({ isOpen, onClose, planToEdit }: Props) {
       setName(planToEdit?.name ?? '')
       setFile(null)
       setIsDragging(false)
+      setSubmitting(false)
+      setSubmitError(null)
     }
   }, [isOpen, planToEdit])
 
   if (!isOpen) return null
 
   const isEdit = planToEdit != null
-  const canSubmit = name.trim().length > 0 && (isEdit || file != null)
+  const canSubmit = !submitting && name.trim().length > 0 && (isEdit || file != null)
 
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -47,22 +51,22 @@ export default function NewPlanModal({ isOpen, onClose, planToEdit }: Props) {
     if (picked) setFile(picked)
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return
-    if (isEdit) {
-      updatePlan(planToEdit.id, {
-        name: name.trim(),
-        ...(file && { fileName: file.name, fileSize: file.size, fileType: file.type }),
-      })
-    } else {
-      addPlan({
-        name: name.trim(),
-        fileName: file!.name,
-        fileSize: file!.size,
-        fileType: file!.type,
-      })
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      if (isEdit) {
+        await updatePlan(planToEdit.id, { name: name.trim(), file: file ?? undefined })
+      } else {
+        await addPlan(name.trim(), file!)
+      }
+      onClose()
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : 'Something went wrong')
+    } finally {
+      setSubmitting(false)
     }
-    onClose()
   }
 
   return (
@@ -107,7 +111,9 @@ export default function NewPlanModal({ isOpen, onClose, planToEdit }: Props) {
           <label className="block text-sm font-medium text-gray-700 mb-1.5">
             Upload Template{' '}
             {isEdit && (
-              <span className="text-gray-400 font-normal">(optional — replaces current file)</span>
+              <span className="text-gray-400 font-normal">
+                (optional — replaces current file)
+              </span>
             )}
           </label>
 
@@ -161,20 +167,29 @@ export default function NewPlanModal({ isOpen, onClose, planToEdit }: Props) {
           )}
         </div>
 
+        {/* Error */}
+        {submitError && (
+          <p className="text-sm text-red-500 mb-4">{submitError}</p>
+        )}
+
         {/* Actions */}
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
+            disabled={submitting}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="px-5 py-2 text-sm font-semibold bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {isEdit ? 'Save Changes' : 'Create Plan'}
+            {submitting && <Loader2 size={14} className="animate-spin" />}
+            {submitting
+              ? isEdit ? 'Saving…' : 'Uploading…'
+              : isEdit ? 'Save Changes' : 'Create Plan'}
           </button>
         </div>
       </div>
