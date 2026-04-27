@@ -41,3 +41,7 @@ data/assumptions.json
 
 # TypeScript
 *.tsbuildinfo
+
+# Python bytecode
+__pycache__/
+*.pyc
