@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "PowerShell(cd C:\\\\Users\\\\liaow\\\\Repos\\\\ck-project-consolidator; npm create vite@latest . -- --template react-ts 2>&1)",
+      "PowerShell(Get-Command node, npm, pnpm, yarn -ErrorAction SilentlyContinue)"
+    ]
+  }
+}
