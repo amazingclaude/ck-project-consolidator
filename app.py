@@ -97,7 +97,6 @@ def compute_metrics(content: bytes) -> dict:
     def col_sum(col: str) -> float:
         return float(df[col].fillna(0).sum()) if col in df.columns else 0.0
 
-    planned_sockets = int(col_sum("planned_sockets"))
     target_sockets = int(col_sum("target_sockets"))
 
     sr_capacity = ASSUMPTIONS["delivery_capacity_sockets_per_year"]["senior_delivery_manager"]
@@ -105,10 +104,7 @@ def compute_metrics(content: bytes) -> dict:
     asset_per_socket = ASSUMPTIONS["value_per_socket"]["asset_value"]
 
     return {
-        "targets_vs_planned": {
-            "target_sockets": target_sockets,
-            "planned_sockets": planned_sockets,
-        },
+        "target_sockets": target_sockets,
         "capex": {
             "total": col_sum("total_capex"),
             "bom": col_sum("capex_bom"),
@@ -116,8 +112,8 @@ def compute_metrics(content: bytes) -> dict:
             "connection": col_sum("capex_connection"),
         },
         "workforce": {
-            "senior_delivery_managers_required": round(planned_sockets / sr_capacity, 1) if sr_capacity else 0.0,
-            "delivery_managers_required": round(planned_sockets / dm_capacity, 1) if dm_capacity else 0.0,
+            "senior_delivery_managers_required": round(target_sockets / sr_capacity, 1) if sr_capacity else 0.0,
+            "delivery_managers_required": round(target_sockets / dm_capacity, 1) if dm_capacity else 0.0,
         },
         "asset_value": float(target_sockets * asset_per_socket),
     }
@@ -427,10 +423,7 @@ def get_plan_data(plan_id: str):
     df = pd.read_excel(io.BytesIO(content), sheet_name="Sheet1")
 
     str_cols = ["custom_region_name", "contract_name", "work_package_name"]
-    monthly_cols = (
-        [f"target_sockets_{i}" for i in range(1, 13)]
-        + [f"planned_sockets_{i}" for i in range(1, 13)]
-    )
+    monthly_cols = [f"target_sockets_{i}" for i in range(1, 13)]
     # Ensure every monthly column exists even if absent in the sheet
     for col in monthly_cols:
         if col not in df.columns:

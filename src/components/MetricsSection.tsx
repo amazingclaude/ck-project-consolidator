@@ -22,7 +22,7 @@ interface Props {
 }
 
 export default function MetricsSection({ metrics }: Props) {
-  const { targets_vs_planned: sockets, capex, workforce, asset_value } = metrics
+  const { target_sockets, capex, workforce, asset_value } = metrics
 
   const pct = (val: number) =>
     capex.total > 0 ? (val / capex.total) * 100 : 0
@@ -31,28 +31,17 @@ export default function MetricsSection({ metrics }: Props) {
     <div className="space-y-4 mb-8">
       {/* ── Row 1: Sockets + Capex ── */}
       <div className="grid grid-cols-2 gap-4">
-        {/* Targets vs Planned */}
+        {/* Target Sockets */}
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-5">
             <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center shrink-0">
               <Zap size={15} className="text-emerald-600" />
             </div>
-            <h3 className="text-sm font-semibold text-gray-700">Targets vs Planned (Sockets)</h3>
+            <h3 className="text-sm font-semibold text-gray-700">Target Sockets</h3>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs text-gray-400 mb-1">Target Sockets</p>
-              <p className="text-3xl font-extrabold text-gray-900 tabular-nums">
-                {formatNumber(sockets.target_sockets)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400 mb-1">Planned Sockets</p>
-              <p className="text-3xl font-extrabold text-emerald-600 tabular-nums">
-                {formatNumber(sockets.planned_sockets)}
-              </p>
-            </div>
-          </div>
+          <p className="text-3xl font-extrabold text-gray-900 tabular-nums">
+            {formatNumber(target_sockets)}
+          </p>
         </div>
 
         {/* Total Capex */}

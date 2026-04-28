@@ -42,10 +42,7 @@ export async function removePlan(id: string): Promise<void> {
 }
 
 export interface PlanMetrics {
-  targets_vs_planned: {
-    target_sockets: number
-    planned_sockets: number
-  }
+  target_sockets: number
   capex: {
     total: number
     bom: number

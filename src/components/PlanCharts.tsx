@@ -27,9 +27,7 @@ function fmtCurrency(n: number) {
 interface ChartPoint {
   label: string
   targetMonthly: number
-  plannedMonthly: number
   targetCumulative: number
-  plannedCumulative: number
   capexBom: number
   capexInstallation: number
   capexConnection: number
@@ -79,25 +77,18 @@ export default function PlanCharts({ rows, assumptions }: Props) {
   const chartData = useMemo((): ChartPoint[] => {
     const { value_per_socket: vps, delivery_capacity_sockets_per_year: cap } = assumptions
     let cumTarget = 0
-    let cumPlanned = 0
 
     return Array.from({ length: 12 }, (_, i) => {
       const m = i + 1
       const targetMonthly = filteredRows.reduce(
         (s, r) => s + (Number(r[`target_sockets_${m}`]) || 0), 0,
       )
-      const plannedMonthly = filteredRows.reduce(
-        (s, r) => s + (Number(r[`planned_sockets_${m}`]) || 0), 0,
-      )
       cumTarget += targetMonthly
-      cumPlanned += plannedMonthly
 
       return {
         label: `M${m}`,
         targetMonthly,
-        plannedMonthly,
         targetCumulative: cumTarget,
-        plannedCumulative: cumPlanned,
         // Graph 2: capex from target sockets × assumption values
         capexBom: targetMonthly * vps.capex_bom,
         capexInstallation: targetMonthly * vps.capex_installation,
@@ -118,8 +109,8 @@ export default function PlanCharts({ rows, assumptions }: Props) {
     <div className="mt-6 space-y-5">
       <FilterBar rows={rows} filter={filter} onChange={setFilter} />
 
-      {/* ── Graph 1: Monthly (bars) + Cumulative (lines), dual y-axis ── */}
-      <ChartCard title="Monthly & Cumulative Sockets — Target vs Planned">
+      {/* ── Graph 1: Monthly (bars) + Cumulative (line), dual y-axis ── */}
+      <ChartCard title="Monthly & Cumulative Target Sockets">
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={chartData} margin={{ top: 4, right: 40, left: 10, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
@@ -150,17 +141,9 @@ export default function PlanCharts({ rows, assumptions }: Props) {
               yAxisId="monthly" dataKey="targetMonthly" name="Target (monthly)"
               fill="#09b82f" opacity={0.75} barSize={14}
             />
-            <Bar
-              yAxisId="monthly" dataKey="plannedMonthly" name="Planned (monthly)"
-              fill="#4016f9" opacity={0.75} barSize={14}
-            />
             <Line
               yAxisId="cumulative" dataKey="targetCumulative" name="Target (cumulative)"
               stroke="#09b82f" strokeWidth={2.5} dot={false} type="monotone"
-            />
-            <Line
-              yAxisId="cumulative" dataKey="plannedCumulative" name="Planned (cumulative)"
-              stroke="#4016f9" strokeWidth={2.5} dot={false} type="monotone"
             />
           </ComposedChart>
         </ResponsiveContainer>
