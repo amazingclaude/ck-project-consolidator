@@ -9,6 +9,8 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// ─── Plans CRUD ───────────────────────────────────────────────────────────────
+
 export async function fetchPlans(): Promise<Plan[]> {
   return handleResponse<Plan[]>(await fetch('/api/plans'))
 }
@@ -41,6 +43,35 @@ export async function removePlan(id: string): Promise<void> {
   )
 }
 
+// ─── Assumptions ──────────────────────────────────────────────────────────────
+
+export interface Assumptions {
+  value_per_socket: {
+    capex_bom_per_socket: number
+    capex_installation_per_socket: number
+    capex_connection_per_socket: number
+    asset_value_per_socket: number
+  }
+  delivery_capacity_sockets_per_year: {
+    senior_delivery_manager: number
+    delivery_manager: number
+  }
+  notes: {
+    capex_bom_per_socket: string
+    capex_installation_per_socket: string
+    capex_connection_per_socket: string
+    asset_value_per_socket: string
+    senior_delivery_manager: string
+    delivery_manager: string
+  }
+}
+
+export async function fetchAssumptions(): Promise<Assumptions> {
+  return handleResponse<Assumptions>(await fetch('/api/assumptions'))
+}
+
+// ─── Metrics ──────────────────────────────────────────────────────────────────
+
 export interface PlanMetrics {
   target_sockets: number
   capex: {
@@ -56,34 +87,50 @@ export interface PlanMetrics {
   asset_value: number
 }
 
-export interface Assumptions {
-  value_per_socket: {
-    capex_bom: number
-    capex_installation: number
-    capex_connection: number
-    capex_total: number
-    asset_value: number
-  }
-  delivery_capacity_sockets_per_year: {
-    senior_delivery_manager: number
-    delivery_manager: number
-  }
-}
-
 export async function fetchPlanMetrics(id: string): Promise<PlanMetrics> {
   return handleResponse<PlanMetrics>(await fetch(`/api/plans/${id}/metrics`))
 }
 
-export async function fetchAssumptions(): Promise<Assumptions> {
-  return handleResponse<Assumptions>(await fetch('/api/assumptions'))
-}
+// ─── Plan rows (SQL source of truth) ─────────────────────────────────────────
 
-export type PlanRow = {
-  custom_region_name: string
+export interface PlanRow {
+  row_id: number
+  region_name: string
   contract_name: string
   work_package_name: string
-} & Record<string, number | string>
+  capex_bom_per_socket: number
+  capex_installation_per_socket: number
+  capex_connection_per_socket: number
+  total_capex_per_socket: number
+  target_sockets: number
+  target_sockets_1: number
+  target_sockets_2: number
+  target_sockets_3: number
+  target_sockets_4: number
+  target_sockets_5: number
+  target_sockets_6: number
+  target_sockets_7: number
+  target_sockets_8: number
+  target_sockets_9: number
+  target_sockets_10: number
+  target_sockets_11: number
+  target_sockets_12: number
+}
 
-export async function fetchPlanData(id: string): Promise<PlanRow[]> {
-  return handleResponse<PlanRow[]>(await fetch(`/api/plans/${id}/data`))
+export async function fetchPlanRows(id: string): Promise<PlanRow[]> {
+  return handleResponse<PlanRow[]>(await fetch(`/api/plans/${id}/rows`))
+}
+
+export async function updatePlanRow(
+  planId: string,
+  rowId: number,
+  data: Partial<Omit<PlanRow, 'row_id'>>,
+): Promise<void> {
+  return handleResponse<void>(
+    await fetch(`/api/plans/${planId}/rows/${rowId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  )
 }

@@ -8,8 +8,6 @@ import type { PlanRow, Assumptions } from '../api/plansApi'
 import FilterBar, { DEFAULT_FILTER } from './FilterBar'
 import type { FilterState } from './FilterBar'
 
-const ALL = 'All'
-
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
 function fmtNum(n: number) {
@@ -62,10 +60,10 @@ interface Props {
 export default function PlanCharts({ rows, assumptions }: Props) {
   const [filter, setFilter] = useState<FilterState>(DEFAULT_FILTER)
 
-  // Apply hierarchical filter
   const filteredRows = useMemo(() =>
     rows.filter(row => {
-      if (filter.region !== ALL && row.custom_region_name !== filter.region) return false
+      const ALL = 'All'
+      if (filter.region !== ALL && row.region_name !== filter.region) return false
       if (filter.contract !== ALL && row.contract_name !== filter.contract) return false
       if (filter.workPackage !== ALL && row.work_package_name !== filter.workPackage) return false
       return true
@@ -73,34 +71,45 @@ export default function PlanCharts({ rows, assumptions }: Props) {
     [rows, filter],
   )
 
-  // Aggregate monthly totals and derive all chart series in a single pass
   const chartData = useMemo((): ChartPoint[] => {
-    const { value_per_socket: vps, delivery_capacity_sockets_per_year: cap } = assumptions
+    const { delivery_capacity_sockets_per_year: cap } = assumptions
     let cumTarget = 0
 
     return Array.from({ length: 12 }, (_, i) => {
       const m = i + 1
+      const monthKey = `target_sockets_${m}` as keyof PlanRow
+
+      // Chart 1: monthly target sockets (sum across filtered rows)
       const targetMonthly = filteredRows.reduce(
-        (s, r) => s + (Number(r[`target_sockets_${m}`]) || 0), 0,
+        (s, r) => s + (Number(r[monthKey]) || 0), 0,
       )
       cumTarget += targetMonthly
+
+      // Chart 2: monthly capex — each row contributes its own per-socket cost
+      const capexBom = filteredRows.reduce(
+        (s, r) => s + (Number(r[monthKey]) || 0) * Number(r.capex_bom_per_socket), 0,
+      )
+      const capexInstallation = filteredRows.reduce(
+        (s, r) => s + (Number(r[monthKey]) || 0) * Number(r.capex_installation_per_socket), 0,
+      )
+      const capexConnection = filteredRows.reduce(
+        (s, r) => s + (Number(r[monthKey]) || 0) * Number(r.capex_connection_per_socket), 0,
+      )
+
+      // Chart 3: DMs required — monthly sockets ÷ (annual capacity / 12)
+      const srMonthly = cap.senior_delivery_manager / 12
+      const dmMonthly = cap.delivery_manager / 12
 
       return {
         label: `M${m}`,
         targetMonthly,
         targetCumulative: cumTarget,
-        // Graph 2: capex from target sockets × assumption values
-        capexBom: targetMonthly * vps.capex_bom,
-        capexInstallation: targetMonthly * vps.capex_installation,
-        capexConnection: targetMonthly * vps.capex_connection,
-        capexTotal: targetMonthly * vps.capex_total,
-        // Graph 3: DMs from target sockets ÷ annual capacity assumption
-        seniorDMs: cap.senior_delivery_manager > 0
-          ? +(targetMonthly / cap.senior_delivery_manager).toFixed(3)
-          : 0,
-        dms: cap.delivery_manager > 0
-          ? +(targetMonthly / cap.delivery_manager).toFixed(3)
-          : 0,
+        capexBom,
+        capexInstallation,
+        capexConnection,
+        capexTotal: capexBom + capexInstallation + capexConnection,
+        seniorDMs: srMonthly > 0 ? +(targetMonthly / srMonthly).toFixed(3) : 0,
+        dms: dmMonthly > 0 ? +(targetMonthly / dmMonthly).toFixed(3) : 0,
       }
     })
   }, [filteredRows, assumptions])
@@ -109,7 +118,7 @@ export default function PlanCharts({ rows, assumptions }: Props) {
     <div className="mt-6 space-y-5">
       <FilterBar rows={rows} filter={filter} onChange={setFilter} />
 
-      {/* ── Graph 1: Monthly (bars) + Cumulative (line), dual y-axis ── */}
+      {/* Chart 1: Monthly (bars) + Cumulative (line), dual y-axis */}
       <ChartCard title="Monthly & Cumulative Target Sockets">
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={chartData} margin={{ top: 4, right: 40, left: 10, bottom: 4 }}>
@@ -149,8 +158,8 @@ export default function PlanCharts({ rows, assumptions }: Props) {
         </ResponsiveContainer>
       </ChartCard>
 
-      {/* ── Graph 2: Monthly capex breakdown (line chart) ── */}
-      <ChartCard title="Monthly Capex by Component — based on Target Sockets × assumption">
+      {/* Chart 2: Monthly capex by component (line chart) */}
+      <ChartCard title="Monthly Capex by Component">
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={chartData} margin={{ top: 4, right: 20, left: 10, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
@@ -174,8 +183,8 @@ export default function PlanCharts({ rows, assumptions }: Props) {
         </ResponsiveContainer>
       </ChartCard>
 
-      {/* ── Graph 3: DMs required per month ── */}
-      <ChartCard title="Delivery Managers Required per Month — based on Target Sockets ÷ annual capacity">
+      {/* Chart 3: DMs required per month */}
+      <ChartCard title="Delivery Managers Required per Month">
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={chartData} margin={{ top: 4, right: 20, left: 10, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
@@ -188,7 +197,7 @@ export default function PlanCharts({ rows, assumptions }: Props) {
             />
             <Legend wrapperStyle={LEGEND} />
             <Line dataKey="seniorDMs" name="Senior Delivery Managers" stroke="#4016f9" strokeWidth={2} dot={false} type="monotone" />
-            <Line dataKey="dms"       name="Delivery Managers"        stroke="#09b82f" strokeWidth={2} dot={false} type="monotone" />
+            <Line dataKey="dms"       name="CK Delivery Managers"     stroke="#09b82f" strokeWidth={2} dot={false} type="monotone" />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>

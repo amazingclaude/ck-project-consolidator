@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar'
 import Home from './pages/Home'
 import BusinessPlanning from './pages/BusinessPlanning'
 import PlanDetail from './pages/PlanDetail'
+import PlanEdit from './pages/PlanEdit'
 import PortfolioOverview from './pages/PortfolioOverview'
 import ScheduleAnalysis from './pages/ScheduleAnalysis'
 import CostAnalysis from './pages/CostAnalysis'
@@ -23,6 +24,7 @@ export default function App() {
               <Route path="/home" element={<Home />} />
               <Route path="/business-planning" element={<BusinessPlanning />} />
               <Route path="/business-planning/:planId" element={<PlanDetail />} />
+              <Route path="/business-planning/:planId/edit" element={<PlanEdit />} />
               <Route path="/portfolio-overview" element={<PortfolioOverview />} />
               <Route path="/schedule-analysis" element={<ScheduleAnalysis />} />
               <Route path="/cost-analysis" element={<CostAnalysis />} />

@@ -6,16 +6,12 @@ function fmt(n: number) {
   return n.toLocaleString('en-GB')
 }
 
-interface RowProps {
-  label: string
-  value: string
-}
-
-function Row({ label, value }: RowProps) {
+function Row({ label, value, notes }: { label: string; value: string; notes?: string }) {
   return (
     <tr className="border-b border-gray-50 last:border-0">
       <td className="py-2 text-sm text-gray-600">{label}</td>
       <td className="py-2 text-sm text-gray-900 font-medium text-right tabular-nums">{value}</td>
+      <td className="py-2 text-sm text-gray-400 text-left pl-4">{notes ?? ''}</td>
     </tr>
   )
 }
@@ -23,7 +19,7 @@ function Row({ label, value }: RowProps) {
 function SectionHeader({ label }: { label: string }) {
   return (
     <tr>
-      <td colSpan={2} className="pt-4 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+      <td colSpan={3} className="pt-4 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
         {label}
       </td>
     </tr>
@@ -36,10 +32,10 @@ interface Props {
 
 export default function AssumptionSheet({ assumptions }: Props) {
   const [open, setOpen] = useState(false)
-  const { value_per_socket: vps, delivery_capacity_sockets_per_year: cap } = assumptions
+  const { value_per_socket: vps, delivery_capacity_sockets_per_year: cap, notes } = assumptions
 
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden">
+    <div className="border border-gray-200 rounded-xl overflow-hidden mb-6">
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center justify-between px-5 py-3 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 transition-colors"
@@ -65,19 +61,21 @@ export default function AssumptionSheet({ assumptions }: Props) {
                 <th className="text-right py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   Value
                 </th>
+                <th className="text-left py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider pl-4">
+                  Notes
+                </th>
               </tr>
             </thead>
             <tbody>
               <SectionHeader label="Value per socket (£)" />
-              <Row label="Capex — BOM"          value={`£${fmt(vps.capex_bom)}`} />
-              <Row label="Capex — Installation" value={`£${fmt(vps.capex_installation)}`} />
-              <Row label="Capex — Connection"   value={`£${fmt(vps.capex_connection)}`} />
-              <Row label="Capex (total)"         value={`£${fmt(vps.capex_total)}`} />
-              <Row label="Asset Value"           value={`£${fmt(vps.asset_value)}`} />
+              <Row label="BOM"          value={`£${fmt(vps.capex_bom_per_socket)}`}          notes={notes?.capex_bom_per_socket} />
+              <Row label="Installation" value={`£${fmt(vps.capex_installation_per_socket)}`} notes={notes?.capex_installation_per_socket} />
+              <Row label="Connection"   value={`£${fmt(vps.capex_connection_per_socket)}`}   notes={notes?.capex_connection_per_socket} />
+              <Row label="Asset Value"  value={`£${fmt(vps.asset_value_per_socket)}`}         notes={notes?.asset_value_per_socket} />
 
               <SectionHeader label="Annual delivery capacity (no. of sockets)" />
-              <Row label="Senior Delivery Manager" value={fmt(cap.senior_delivery_manager)} />
-              <Row label="Delivery Manager"        value={fmt(cap.delivery_manager)} />
+              <Row label="Senior Delivery Manager" value={`£${fmt(cap.senior_delivery_manager)}`} notes={notes?.senior_delivery_manager} />
+              <Row label="CK Delivery Manager"     value={`£${fmt(cap.delivery_manager)}`}         notes={notes?.delivery_manager} />
             </tbody>
           </table>
         </div>

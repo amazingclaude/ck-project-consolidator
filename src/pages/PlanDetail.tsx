@@ -2,9 +2,8 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Archive, Pencil, Trash2, Loader2, AlertCircle } from 'lucide-react'
 import { usePlans } from '../context/PlansContext'
-import { fetchPlanMetrics, fetchAssumptions, fetchPlanData } from '../api/plansApi'
+import { fetchPlanMetrics, fetchAssumptions, fetchPlanRows } from '../api/plansApi'
 import type { PlanMetrics, Assumptions, PlanRow } from '../api/plansApi'
-import NewPlanModal from '../components/NewPlanModal'
 import MetricsSection, { MetricsSkeleton } from '../components/MetricsSection'
 import AssumptionSheet from '../components/AssumptionSheet'
 import PlanCharts from '../components/PlanCharts'
@@ -14,8 +13,6 @@ export default function PlanDetail() {
   const navigate = useNavigate()
   const { getPlan, loading, archivePlan, unarchivePlan, deletePlan } = usePlans()
 
-  // All hooks before any conditional returns
-  const [modalOpen, setModalOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -24,12 +21,11 @@ export default function PlanDetail() {
   const [metricsLoading, setMetricsLoading] = useState(false)
   const [metricsError, setMetricsError] = useState<string | null>(null)
 
-  const [planData, setPlanData] = useState<PlanRow[]>([])
-  const [dataLoading, setDataLoading] = useState(false)
+  const [rows, setRows] = useState<PlanRow[]>([])
+  const [rowsLoading, setRowsLoading] = useState(false)
 
   const plan = getPlan(planId ?? '')
 
-  // Fetch metrics + assumptions (fast — reads cached blobs)
   useEffect(() => {
     if (!plan?.id) return
     setMetricsLoading(true)
@@ -40,17 +36,15 @@ export default function PlanDetail() {
       .finally(() => setMetricsLoading(false))
   }, [plan?.id])
 
-  // Fetch raw row data for charts (parses the Excel — runs independently)
   useEffect(() => {
     if (!plan?.id) return
-    setDataLoading(true)
-    fetchPlanData(plan.id)
-      .then(setPlanData)
+    setRowsLoading(true)
+    fetchPlanRows(plan.id)
+      .then(setRows)
       .catch(console.error)
-      .finally(() => setDataLoading(false))
+      .finally(() => setRowsLoading(false))
   }, [plan?.id])
 
-  // Early returns after all hooks
   if (loading && !plan) {
     return (
       <div className="flex items-center justify-center h-full gap-3 text-gray-400">
@@ -135,7 +129,7 @@ export default function PlanDetail() {
             {isArchived ? 'Unarchive' : 'Archive'}
           </button>
           <button
-            onClick={() => setModalOpen(true)}
+            onClick={() => navigate(`/business-planning/${plan.id}/edit`)}
             className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-300 rounded-lg transition-colors"
           >
             <Pencil size={15} /> Modify
@@ -149,7 +143,7 @@ export default function PlanDetail() {
         </div>
       </div>
 
-      {/* ── Metrics ── */}
+      {/* Metrics */}
       {metricsLoading && <MetricsSkeleton />}
       {metricsError && (
         <div className="flex items-center gap-2 mb-8 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -160,21 +154,15 @@ export default function PlanDetail() {
       {!metricsLoading && metrics && <MetricsSection metrics={metrics} />}
       {!metricsLoading && assumptions && <AssumptionSheet assumptions={assumptions} />}
 
-      {/* ── Charts ── */}
-      {dataLoading ? (
+      {/* Charts */}
+      {rowsLoading ? (
         <div className="flex items-center justify-center py-16 gap-3 text-gray-400 mt-6">
           <Loader2 size={20} className="animate-spin" />
           <span className="text-sm">Loading chart data…</span>
         </div>
-      ) : planData.length > 0 && assumptions ? (
-        <PlanCharts rows={planData} assumptions={assumptions} />
+      ) : rows.length > 0 && assumptions ? (
+        <PlanCharts rows={rows} assumptions={assumptions} />
       ) : null}
-
-      <NewPlanModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        planToEdit={plan}
-      />
 
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
