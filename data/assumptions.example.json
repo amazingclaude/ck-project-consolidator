@@ -9,5 +9,13 @@
   "delivery_capacity_sockets_per_year": {
     "senior_delivery_manager": 0,
     "delivery_manager": 0
+  },
+  "notes": {
+    "capex_bom_per_socket": "",
+    "capex_installation_per_socket": "",
+    "capex_connection_per_socket": "",
+    "asset_value_per_socket": "",
+    "senior_delivery_manager": "",
+    "delivery_manager": ""
   }
 }
