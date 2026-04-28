@@ -89,7 +89,7 @@ Use the **Azure App Service** VS Code extension to deploy the project folder. Ma
 In Azure Portal → App Service → **Configuration → General settings**, set the startup command to:
 
 ```
-python app.py
+gunicorn -k uvicorn.workers.UvicornWorker app:app --bind=0.0.0.0:$PORT
 ```
 
 ### 4. Set environment variables
