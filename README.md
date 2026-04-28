@@ -112,3 +112,36 @@ In Azure Portal → App Service → **Configuration → Application settings**, 
 ## Environment Variables Reference
 
 See [.env.example](.env.example) for descriptions of all variables.
+
+---
+
+## Deployment Pitfalls
+
+### 1. Oryx skips Python build due to mixed project structure
+
+**Symptom:**
+```
+ModuleNotFoundError: No module named 'uvicorn'
+WARNING: Could not find virtual environment directory /home/site/wwwroot/antenv.
+Could not find build manifest file at '/home/site/wwwroot/oryx-manifest.toml'
+```
+
+**Cause:** This repo has both a Python backend (`requirements.txt`) and a React frontend (`package.json`). Azure's Oryx build system sees multiple platform signals and fails to build the Python environment.
+
+**Fix:** The `.python-version` file at the repo root explicitly tells Oryx to build Python. Do not remove it.
+
+---
+
+### 2. `SCM_DO_BUILD_DURING_DEPLOYMENT` must be set before deploying
+
+**Cause:** Setting `SCM_DO_BUILD_DURING_DEPLOYMENT=true` in Azure App Settings only takes effect on the **next deployment**. Restarting the app is not enough.
+
+**Fix:** Set the flag first, then redeploy from VS Code.
+
+---
+
+### 3. `start.sh` is unreachable when Oryx build succeeds
+
+**Cause:** When Oryx builds successfully, it compresses the app into `output.tar.zst` and extracts it to a temp directory (e.g. `/tmp/8dea4ff2e12351d/`) at startup — not to `/home/site/wwwroot/`. A startup command pointing to `bash /home/site/wwwroot/start.sh` will fail with `No such file or directory`.
+
+**Fix:** Set the startup command directly to the gunicorn command, not to `start.sh`.
