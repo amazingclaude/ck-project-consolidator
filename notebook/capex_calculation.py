@@ -249,7 +249,7 @@ def draw_stacked_bar_chart(monthly_by_type: pd.DataFrame):
 #     df,
 #     target_month_1,
 # )
+# draw_stacked_bar_chart(monthly_by_type)
 # plot_bom_incurred_cost_by_month_and_offset(detail, cost_type="bom")
 # plot_bom_incurred_cost_by_month_and_offset(detail, cost_type="connection")
 # plot_bom_incurred_cost_by_month_and_offset(detail, cost_type="installation")
-# draw_stacked_bar_chart(monthly_by_type)

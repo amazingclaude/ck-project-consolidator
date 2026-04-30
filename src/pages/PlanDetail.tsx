@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Archive, Pencil, Trash2, Loader2, AlertCircle } from 'lucide-react'
 import { usePlans } from '../context/PlansContext'
-import { fetchPlanMetrics, fetchAssumptions, fetchPlanRows } from '../api/plansApi'
-import type { PlanMetrics, Assumptions, PlanRow } from '../api/plansApi'
+import { fetchPlanMetrics, fetchAssumptions, fetchPlanRows, fetchCapexIncurred } from '../api/plansApi'
+import type { PlanMetrics, Assumptions, PlanRow, CapexIncurredData } from '../api/plansApi'
 import MetricsSection, { MetricsSkeleton } from '../components/MetricsSection'
 import AssumptionSheet from '../components/AssumptionSheet'
 import PlanCharts from '../components/PlanCharts'
@@ -22,6 +22,7 @@ export default function PlanDetail() {
   const [metricsError, setMetricsError] = useState<string | null>(null)
 
   const [rows, setRows] = useState<PlanRow[]>([])
+  const [capexIncurred, setCapexIncurred] = useState<CapexIncurredData | null>(null)
   const [rowsLoading, setRowsLoading] = useState(false)
 
   const plan = getPlan(planId ?? '')
@@ -39,8 +40,11 @@ export default function PlanDetail() {
   useEffect(() => {
     if (!plan?.id) return
     setRowsLoading(true)
-    fetchPlanRows(plan.id)
-      .then(setRows)
+    Promise.all([fetchPlanRows(plan.id), fetchCapexIncurred(plan.id)])
+      .then(([planRows, incurred]) => {
+        setRows(planRows)
+        setCapexIncurred(incurred)
+      })
       .catch(console.error)
       .finally(() => setRowsLoading(false))
   }, [plan?.id])
@@ -160,8 +164,8 @@ export default function PlanDetail() {
           <Loader2 size={20} className="animate-spin" />
           <span className="text-sm">Loading chart data…</span>
         </div>
-      ) : rows.length > 0 && assumptions ? (
-        <PlanCharts rows={rows} assumptions={assumptions} />
+      ) : rows.length > 0 && assumptions && capexIncurred ? (
+        <PlanCharts rows={rows} assumptions={assumptions} capexIncurred={capexIncurred} />
       ) : null}
 
       {deleteConfirm && (

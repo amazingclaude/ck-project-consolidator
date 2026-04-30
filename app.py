@@ -146,6 +146,106 @@ def compute_metrics_from_rows(rows: list[dict]) -> dict:
     }
 
 
+def compute_incurred_capex_from_rows(
+    rows: list[dict],
+    target_month_1: str = "2026-01-01",
+) -> dict:
+    """Calculate incurred CAPEX timing from SQL rows and assumptions.json.
+
+    This mirrors notebook/capex_calculation.py while returning JSON-safe rows for
+    the React charts.
+    """
+    if not rows:
+        return {"target_month_1": target_month_1, "detail": [], "monthly_by_type": []}
+
+    df = pd.DataFrame(rows)
+    group_cols = ["region_name", "contract_name", "work_package_name"]
+    target_cols = [f"target_sockets_{i}" for i in range(1, 13)]
+    payment_schedule = pd.DataFrame(ASSUMPTIONS["payment_schedule"])
+    cost_cols = sorted(payment_schedule["cost_column"].unique())
+
+    for col in group_cols:
+        if col not in df.columns:
+            df[col] = ""
+    for col in target_cols:
+        if col not in df.columns:
+            df[col] = 0
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    for col in cost_cols:
+        if col not in df.columns:
+            df[col] = 0.0
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+    start_month = pd.Timestamp(target_month_1).to_period("M").to_timestamp()
+    socket_long = df.melt(
+        id_vars=group_cols + cost_cols,
+        value_vars=target_cols,
+        var_name="target_socket_column",
+        value_name="monthly_target_sockets",
+    )
+    socket_long["target_sockets"] = pd.to_numeric(
+        socket_long["monthly_target_sockets"],
+        errors="coerce",
+    ).fillna(0)
+    socket_long = socket_long.drop(columns=["monthly_target_sockets"])
+    socket_long = socket_long[socket_long["target_sockets"] != 0].copy()
+
+    if socket_long.empty:
+        return {"target_month_1": target_month_1, "detail": [], "monthly_by_type": []}
+
+    socket_long["target_month_number"] = (
+        socket_long["target_socket_column"].str.extract(r"(\d+)$").astype(int)
+    )
+    socket_long["target_month_end"] = socket_long["target_month_number"].apply(
+        lambda month_no: start_month + pd.DateOffset(months=int(month_no) - 1) + pd.offsets.MonthEnd(0)
+    )
+
+    detail = socket_long.merge(payment_schedule, how="cross")
+    detail["cost_per_socket"] = 0.0
+    for cost_column in cost_cols:
+        mask = detail["cost_column"].eq(cost_column)
+        detail.loc[mask, "cost_per_socket"] = detail.loc[mask, cost_column]
+
+    detail["incurred_date"] = detail["target_month_end"] + pd.to_timedelta(
+        detail["offset_days"],
+        unit="D",
+    )
+    detail["incurred_month"] = detail["incurred_date"].dt.to_period("M").dt.to_timestamp("M")
+    detail["incurred_cost"] = (
+        detail["target_sockets"] * detail["cost_per_socket"] * detail["payment_pct"]
+    )
+
+    monthly_by_type = (
+        detail.groupby(group_cols + ["incurred_month", "cost_type"], as_index=False)[
+            "incurred_cost"
+        ]
+        .sum()
+        .sort_values(group_cols + ["incurred_month", "cost_type"])
+    )
+
+    detail_out = detail[
+        group_cols
+        + [
+            "cost_type",
+            "offset_days",
+            "target_sockets",
+            "incurred_month",
+            "incurred_cost",
+        ]
+    ].copy()
+    monthly_out = monthly_by_type.copy()
+
+    for frame in (detail_out, monthly_out):
+        frame["incurred_month"] = frame["incurred_month"].dt.strftime("%Y-%m-%d")
+        frame["incurred_cost"] = frame["incurred_cost"].astype(float)
+
+    return {
+        "target_month_1": target_month_1,
+        "detail": detail_out.to_dict(orient="records"),
+        "monthly_by_type": monthly_out.to_dict(orient="records"),
+    }
+
+
 # ─── AI Foundry helpers ───────────────────────────────────────────────────────
 
 def build_foundry_chat_url() -> str:
@@ -370,6 +470,13 @@ def get_plan_metrics(plan_id: str):
 def get_plan_rows(plan_id: str):
     import db as _db
     return _db.get_rows(plan_id)
+
+
+@app.get("/api/plans/{plan_id}/capex-incurred")
+def get_plan_capex_incurred(plan_id: str):
+    import db as _db
+    rows = _db.get_rows(plan_id)
+    return compute_incurred_capex_from_rows(rows)
 
 
 @app.put("/api/plans/{plan_id}/rows/{row_id}", status_code=200)

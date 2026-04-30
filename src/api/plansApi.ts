@@ -127,6 +127,38 @@ export async function fetchPlanRows(id: string): Promise<PlanRow[]> {
   return handleResponse<PlanRow[]>(await fetch(`/api/plans/${id}/rows`))
 }
 
+export interface CapexIncurredDetailPoint {
+  region_name: string
+  contract_name: string
+  work_package_name: string
+  cost_type: 'bom' | 'connection' | 'installation' | string
+  offset_days: number
+  target_sockets: number
+  incurred_month: string
+  incurred_cost: number
+}
+
+export interface CapexIncurredMonthlyPoint {
+  region_name: string
+  contract_name: string
+  work_package_name: string
+  incurred_month: string
+  cost_type: 'bom' | 'connection' | 'installation' | string
+  incurred_cost: number
+}
+
+export interface CapexIncurredData {
+  target_month_1: string
+  detail: CapexIncurredDetailPoint[]
+  monthly_by_type: CapexIncurredMonthlyPoint[]
+}
+
+export async function fetchCapexIncurred(id: string): Promise<CapexIncurredData> {
+  return handleResponse<CapexIncurredData>(
+    await fetch(`/api/plans/${id}/capex-incurred`),
+  )
+}
+
 export async function updatePlanRow(
   planId: string,
   rowId: number,
