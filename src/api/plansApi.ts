@@ -56,6 +56,12 @@ export interface Assumptions {
     senior_delivery_manager: number
     delivery_manager: number
   }
+  payment_schedule: {
+    cost_type: string
+    cost_column: string
+    offset_days: number
+    payment_pct: number
+  }[]
   notes: {
     capex_bom_per_socket: string
     capex_installation_per_socket: string

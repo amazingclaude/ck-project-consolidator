@@ -10,6 +10,7 @@
     "senior_delivery_manager": 0,
     "delivery_manager": 0
   },
+  
   "notes": {
     "capex_bom_per_socket": "",
     "capex_installation_per_socket": "",
@@ -17,5 +18,49 @@
     "asset_value_per_socket": "",
     "senior_delivery_manager": "",
     "delivery_manager": ""
-  }
+  },
+  "payment_schedule": [
+    {
+      "cost_type": "connection",
+      "cost_column": "capex_connection_per_socket",
+      "offset_days": -150,
+      "payment_pct": 0.5
+    },
+    {
+      "cost_type": "connection",
+      "cost_column": "capex_connection_per_socket",
+      "offset_days": -50,
+      "payment_pct": 0.5
+    },
+    {
+      "cost_type": "installation",
+      "cost_column": "capex_installation_per_socket",
+      "offset_days": -50,
+      "payment_pct": 0.25
+    },
+    {
+      "cost_type": "installation",
+      "cost_column": "capex_installation_per_socket",
+      "offset_days": -50,
+      "payment_pct": 0.5
+    },
+    {
+      "cost_type": "installation",
+      "cost_column": "capex_installation_per_socket",
+      "offset_days": -10,
+      "payment_pct": 0.25
+    },
+    {
+      "cost_type": "bom",
+      "cost_column": "capex_bom_per_socket",
+      "offset_days": -160,
+      "payment_pct": 0.6
+    },
+    {
+      "cost_type": "bom",
+      "cost_column": "capex_bom_per_socket",
+      "offset_days": -80,
+      "payment_pct": 0.4
+    }
+  ]
 }
