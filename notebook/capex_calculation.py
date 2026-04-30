@@ -148,19 +148,47 @@ def calculate_incurred_capex_by_month(
     return detail, monthly_by_type, monthly_pivot
 
 
-# Example usage in your notebook:
-#
-# target_month_1 = "2026-01-01"  # month represented by target_sockets_1
-# detail, monthly_by_type, monthly_pivot = calculate_incurred_capex_by_month(
-#     df,
-#     target_month_1,
-# )
-#
-# monthly_pivot.head()
-#
-# Total incurred cost per month across all work packages:
 
-def calculate_monthly_total_by_cost_type(monthly_by_type: pd.DataFrame) -> pd.DataFrame:
+
+
+
+
+def plot_bom_incurred_cost_by_month_and_offset(detail: pd.DataFrame,cost_type: str):
+    summary = (
+        detail
+        .groupby(['cost_type', 'offset_days', 'incurred_month'])['incurred_cost']
+        .sum()
+        .reset_index()
+    )
+
+    pivot = (
+        summary[summary.cost_type == cost_type]
+        .pivot_table(
+            index='incurred_month',
+            columns='offset_days',
+            values='incurred_cost',
+            aggfunc='sum',
+            fill_value=0
+        )
+        .sort_index()
+    )
+
+    ax = pivot.plot(
+        kind='bar',
+        stacked=True,
+        figsize=(12, 6)
+    )
+
+    ax.set_title('BOM Incurred Cost by Month and Offset Days')
+    ax.set_xlabel('Incurred Month')
+    ax.set_ylabel('Incurred Cost')
+    ax.legend(title='Offset Days', bbox_to_anchor=(1.02, 1), loc='upper left')
+
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.show()
+
+def draw_stacked_bar_chart(monthly_by_type: pd.DataFrame):
     monthly_total_by_cost_type = (
         monthly_by_type.groupby(["incurred_month", "cost_type"], as_index=False)["incurred_cost"]
         .sum()
@@ -185,4 +213,43 @@ def calculate_monthly_total_by_cost_type(monthly_by_type: pd.DataFrame) -> pd.Da
     monthly_total_by_cost_type = monthly_total_by_cost_type[
         ["incurred_month", "bom", "connection", "installation", "total_capex"]
     ]
-    return monthly_total_by_cost_type
+
+    monthly_total_by_cost_type = monthly_total_by_cost_type.sort_values("incurred_month")
+    plt.figure(figsize=(12, 6))
+    plt.bar(
+        monthly_total_by_cost_type["incurred_month"].dt.strftime("%Y-%m"),
+        monthly_total_by_cost_type["bom"],
+        label="BOM",
+    )
+    plt.bar(
+        monthly_total_by_cost_type["incurred_month"].dt.strftime("%Y-%m"),
+        monthly_total_by_cost_type["connection"],
+        bottom=monthly_total_by_cost_type["bom"],
+        label="Connection",
+    )
+    plt.bar(
+        monthly_total_by_cost_type["incurred_month"].dt.strftime("%Y-%m"),
+        monthly_total_by_cost_type["installation"],
+        bottom=monthly_total_by_cost_type["bom"] + monthly_total_by_cost_type["connection"],
+        label="Installation",
+    )
+    plt.xlabel("Incurred Month")
+    plt.ylabel("Total Incurred CAPEX")
+    plt.title("Monthly Incurred CAPEX by Cost Type")
+    plt.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
+    
+# Example usage in your notebook:
+#
+# target_month_1 = "2026-01-01"  # month represented by target_sockets_1
+# detail, monthly_by_type, monthly_pivot = calculate_incurred_capex_by_month(
+#     df,
+#     target_month_1,
+# )
+# plot_bom_incurred_cost_by_month_and_offset(detail, cost_type="bom")
+# plot_bom_incurred_cost_by_month_and_offset(detail, cost_type="connection")
+# plot_bom_incurred_cost_by_month_and_offset(detail, cost_type="installation")
+# draw_stacked_bar_chart(monthly_by_type)

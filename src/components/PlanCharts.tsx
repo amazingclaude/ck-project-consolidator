@@ -158,8 +158,12 @@ export default function PlanCharts({ rows, assumptions }: Props) {
         </ResponsiveContainer>
       </ChartCard>
 
-      {/* Chart 2: Monthly capex by component (line chart) */}
-      <ChartCard title="Monthly Capex by Component">
+      {/* Chart 2: Monthly Planned Values by Component (line chart) */}
+      <ChartCard title="Monthly Planned Values by Component">
+        {/* A note on the chart */}
+        <p className="text-sm text-muted-foreground">
+          Planned Value is the budgeted value of work planned to be delivered in that month, not the cash payment timing.
+        </p>
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={chartData} margin={{ top: 4, right: 20, left: 10, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
