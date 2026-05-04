@@ -55,9 +55,10 @@ function NumCell({
 export default function PlanEdit() {
   const { planId } = useParams<{ planId: string }>()
   const navigate = useNavigate()
-  const { getPlan, loading: plansLoading } = usePlans()
+  const { getPlan, loading: plansLoading, updatePlan } = usePlans()
 
   const [rows, setRows] = useState<PlanRow[]>([])
+  const [planName, setPlanName] = useState('')
   const [dirtyRows, setDirtyRows] = useState<Set<number>>(new Set())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [fetching, setFetching] = useState(true)
@@ -66,6 +67,10 @@ export default function PlanEdit() {
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const plan = getPlan(planId ?? '')
+
+  useEffect(() => {
+    if (plan?.name) setPlanName(plan.name)
+  }, [plan?.name])
 
   useEffect(() => {
     if (!planId) return
@@ -87,6 +92,9 @@ export default function PlanEdit() {
   }
 
   const backPath = `/business-planning/${planId}`
+  const trimmedPlanName = planName.trim()
+  const nameDirty = Boolean(plan && trimmedPlanName !== plan.name)
+  const canSave = !saving && !fetching && trimmedPlanName.length > 0
 
   const updateCell = (rowIndex: number, key: keyof PlanRow, value: string | number) => {
     setRows(prev =>
@@ -117,12 +125,16 @@ export default function PlanEdit() {
     setSaveError(null)
   }
 
-  const handleSave = async () => {
-    if (!planId || dirtyRows.size === 0) { setSaved(true); return }
+  const handleSave = async (): Promise<boolean> => {
+    if (!planId || !canSave) return false
+    if (dirtyRows.size === 0 && !nameDirty) { setSaved(true); return true }
     setSaving(true)
     setSaveError(null)
     setSaved(false)
     try {
+      if (nameDirty) {
+        await updatePlan(planId, { name: trimmedPlanName })
+      }
       await Promise.all(
         rows
           .filter((_, i) => dirtyRows.has(i))
@@ -133,16 +145,18 @@ export default function PlanEdit() {
       )
       setDirtyRows(new Set())
       setSaved(true)
+      return true
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Failed to save changes')
+      return false
     } finally {
       setSaving(false)
     }
   }
 
   const handleDone = async () => {
-    await handleSave()
-    navigate(backPath)
+    const ok = await handleSave()
+    if (ok) navigate(backPath)
   }
 
   return (
@@ -158,9 +172,21 @@ export default function PlanEdit() {
             Back
           </button>
           <span className="text-gray-300">·</span>
-          <h1 className="text-lg font-bold text-gray-900">
-            {plan ? `Edit — ${plan.name}` : 'Edit Plan'}
-          </h1>
+          <label className="sr-only" htmlFor="plan-name">
+            Plan name
+          </label>
+          <input
+            id="plan-name"
+            type="text"
+            value={planName}
+            onChange={e => {
+              setPlanName(e.target.value)
+              setSaved(false)
+              setSaveError(null)
+            }}
+            className="w-80 max-w-[40vw] rounded-lg border border-gray-200 bg-white px-3 py-2 text-lg font-bold text-gray-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+            placeholder="Plan name"
+          />
         </div>
 
         <div className="flex items-center gap-3">
@@ -176,7 +202,7 @@ export default function PlanEdit() {
           )}
           <button
             onClick={handleSave}
-            disabled={saving || fetching}
+            disabled={!canSave}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-white border border-gray-200 hover:border-gray-300 text-gray-700 rounded-lg disabled:opacity-40 transition-colors"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -184,7 +210,7 @@ export default function PlanEdit() {
           </button>
           <button
             onClick={handleDone}
-            disabled={saving || fetching}
+            disabled={!canSave}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-40 transition-colors"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : null}

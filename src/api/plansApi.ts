@@ -123,6 +123,14 @@ export interface PlanRow {
   target_sockets_10: number
   target_sockets_11: number
   target_sockets_12: number
+  planned_gate_1: number | null
+  planned_gate_2: number | null
+  planned_gate_3: number | null
+  planned_gate_4: number | null
+  actual_gate_1: number | null
+  actual_gate_2: number | null
+  actual_gate_3: number | null
+  actual_gate_4: number | null
 }
 
 export async function fetchPlanRows(id: string): Promise<PlanRow[]> {

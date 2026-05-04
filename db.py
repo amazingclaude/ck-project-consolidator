@@ -21,6 +21,9 @@ except ImportError:
 AZURE_SQL_CONNECTION_STRING: str = os.getenv("AZURE_SQL_CONNECTION_STRING", "")
 
 _SOCKET_COLS = [f"target_sockets_{i}" for i in range(1, 13)]
+_GATE_COLS = [f"planned_gate_{i}" for i in range(1, 5)] + [
+    f"actual_gate_{i}" for i in range(1, 5)
+]
 _CAPEX_COLS = [
     "capex_bom_per_socket",
     "capex_installation_per_socket",
@@ -31,6 +34,7 @@ _EDITABLE_COLS = frozenset(
     {"region_name", "contract_name", "work_package_name", "target_sockets"}
     | set(_CAPEX_COLS)
     | set(_SOCKET_COLS)
+    | set(_GATE_COLS)
 )
 
 
@@ -172,10 +176,20 @@ def sync_rows(plan_id: str, df: pd.DataFrame) -> int:
         else:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
 
+    for col in _GATE_COLS:
+        if col not in df.columns:
+            df[col] = None
+        else:
+            weeks = pd.to_numeric(df[col], errors="coerce")
+            df[col] = [int(value) if pd.notna(value) else None for value in weeks]
+
     if "target_sockets" in df.columns:
         df["target_sockets"] = pd.to_numeric(df["target_sockets"], errors="coerce").fillna(0).astype(int)
     else:
         df["target_sockets"] = df[_SOCKET_COLS].sum(axis=1).astype(int)
+
+    def optional_int(value):
+        return int(value) if pd.notna(value) else None
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -191,8 +205,10 @@ def sync_rows(plan_id: str, df: pd.DataFrame) -> int:
                     target_sockets_1,  target_sockets_2,  target_sockets_3,
                     target_sockets_4,  target_sockets_5,  target_sockets_6,
                     target_sockets_7,  target_sockets_8,  target_sockets_9,
-                    target_sockets_10, target_sockets_11, target_sockets_12
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    target_sockets_10, target_sockets_11, target_sockets_12,
+                    planned_gate_1, planned_gate_2, planned_gate_3, planned_gate_4,
+                    actual_gate_1,  actual_gate_2,  actual_gate_3,  actual_gate_4
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     plan_id,
@@ -205,6 +221,7 @@ def sync_rows(plan_id: str, df: pd.DataFrame) -> int:
                     float(row["total_capex_per_socket"]),
                     int(row["target_sockets"]),
                     *[int(row[f"target_sockets_{i}"]) for i in range(1, 13)],
+                    *[optional_int(row[col]) for col in _GATE_COLS],
                 ),
             )
     return len(df)
@@ -222,7 +239,9 @@ def get_rows(plan_id: str) -> list[dict]:
                    target_sockets_1,  target_sockets_2,  target_sockets_3,
                    target_sockets_4,  target_sockets_5,  target_sockets_6,
                    target_sockets_7,  target_sockets_8,  target_sockets_9,
-                   target_sockets_10, target_sockets_11, target_sockets_12
+                   target_sockets_10, target_sockets_11, target_sockets_12,
+                   planned_gate_1, planned_gate_2, planned_gate_3, planned_gate_4,
+                   actual_gate_1,  actual_gate_2,  actual_gate_3,  actual_gate_4
             FROM plan_rows WHERE plan_id = ?
             ORDER BY row_id
             """,

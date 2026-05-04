@@ -82,6 +82,14 @@ class RowUpdateBody(BaseModel):
     target_sockets_10: Optional[int] = None
     target_sockets_11: Optional[int] = None
     target_sockets_12: Optional[int] = None
+    planned_gate_1: Optional[int] = None
+    planned_gate_2: Optional[int] = None
+    planned_gate_3: Optional[int] = None
+    planned_gate_4: Optional[int] = None
+    actual_gate_1: Optional[int] = None
+    actual_gate_2: Optional[int] = None
+    actual_gate_3: Optional[int] = None
+    actual_gate_4: Optional[int] = None
 
 
 # ─── Blob storage helpers (Excel files only) ──────────────────────────────────

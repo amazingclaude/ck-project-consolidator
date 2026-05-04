@@ -40,6 +40,14 @@ CREATE TABLE plan_rows (
     target_sockets_10             INT           NOT NULL DEFAULT 0,
     target_sockets_11             INT           NOT NULL DEFAULT 0,
     target_sockets_12             INT           NOT NULL DEFAULT 0,
+    planned_gate_1                INT           NULL,
+    planned_gate_2                INT           NULL,
+    planned_gate_3                INT           NULL,
+    planned_gate_4                INT           NULL,
+    actual_gate_1                 INT           NULL,
+    actual_gate_2                 INT           NULL,
+    actual_gate_3                 INT           NULL,
+    actual_gate_4                 INT           NULL,
     CONSTRAINT fk_plan_rows_plan
         FOREIGN KEY (plan_id) REFERENCES plans(plan_id) ON DELETE CASCADE
 );
