@@ -264,3 +264,4 @@ def update_row(row_id: int, data: dict) -> None:
         conn.cursor().execute(
             f"UPDATE plan_rows SET {', '.join(parts)} WHERE row_id = ?", params
         )
+
