@@ -3,9 +3,6 @@ import {
   Home,
   Briefcase,
   LayoutGrid,
-  CalendarClock,
-  DollarSign,
-  Map,
   Bot,
   Settings,
 } from 'lucide-react'
@@ -14,9 +11,6 @@ const navItems = [
   { label: 'Home', icon: Home, to: '/home' },
   { label: 'Business Planning', icon: Briefcase, to: '/business-planning' },
   { label: 'Portfolio Overview', icon: LayoutGrid, to: '/portfolio-overview' },
-  { label: 'Schedule Analysis', icon: CalendarClock, to: '/schedule-analysis' },
-  { label: 'Cost Analysis', icon: DollarSign, to: '/cost-analysis' },
-  { label: 'Plan View', icon: Map, to: '/plan-view' },
   { label: 'AI Assistant', icon: Bot, to: '/ai-assistant' },
   { label: 'Settings', icon: Settings, to: '/settings' },
 ]
