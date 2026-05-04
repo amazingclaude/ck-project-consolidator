@@ -1,5 +1,6 @@
 import io
 import json
+import math
 import os
 import urllib.error
 import urllib.request
@@ -120,6 +121,12 @@ def get_excel_blob(container, plan_id: str):
 
 def compute_metrics_from_rows(rows: list[dict]) -> dict:
     target_sockets = sum(r["target_sockets"] for r in rows)
+    monthly_sockets = [
+        sum(r.get(f"target_sockets_{month}", 0) or 0 for r in rows)
+        for month in range(1, 13)
+    ]
+    max_monthly_sockets = max(monthly_sockets, default=0)
+    max_installer_resource_required = math.ceil((max_monthly_sockets / 5) / 4 * 1.5)
     bom_capex = sum(r["target_sockets"] * float(r["capex_bom_per_socket"]) for r in rows)
     installation_capex = sum(r["target_sockets"] * float(r["capex_installation_per_socket"]) for r in rows)
     connection_capex = sum(r["target_sockets"] * float(r["capex_connection_per_socket"]) for r in rows)
@@ -132,6 +139,7 @@ def compute_metrics_from_rows(rows: list[dict]) -> dict:
 
     return {
         "target_sockets": target_sockets,
+        "max_installer_resource_required": max_installer_resource_required,
         "capex": {
             "total": total_capex,
             "bom": bom_capex,
@@ -139,8 +147,8 @@ def compute_metrics_from_rows(rows: list[dict]) -> dict:
             "connection": connection_capex,
         },
         "workforce": {
-            "senior_delivery_managers_required": round(target_sockets / sr_capacity, 1) if sr_capacity else 0.0,
-            "delivery_managers_required": round(target_sockets / dm_capacity, 1) if dm_capacity else 0.0,
+            "senior_delivery_managers_required": math.ceil(target_sockets / sr_capacity) if sr_capacity else 0,
+            "delivery_managers_required": math.ceil(target_sockets / dm_capacity) if dm_capacity else 0,
         },
         "asset_value": float(target_sockets * asset_value_per_socket),
     }

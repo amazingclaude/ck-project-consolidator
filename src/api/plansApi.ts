@@ -81,6 +81,7 @@ export async function fetchAssumptions(): Promise<Assumptions> {
 
 export interface PlanMetrics {
   target_sockets: number
+  max_installer_resource_required: number
   capex: {
     total: number
     bom: number
