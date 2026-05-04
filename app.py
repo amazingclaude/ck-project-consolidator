@@ -162,6 +162,14 @@ def compute_incurred_capex_from_rows(
     group_cols = ["region_name", "contract_name", "work_package_name"]
     target_cols = [f"target_sockets_{i}" for i in range(1, 13)]
     payment_schedule = pd.DataFrame(ASSUMPTIONS["payment_schedule"])
+    if "payment_installment" not in payment_schedule.columns:
+        payment_schedule["payment_installment"] = (
+            payment_schedule.groupby("cost_type").cumcount() + 1
+        )
+    payment_schedule["payment_installment"] = pd.to_numeric(
+        payment_schedule["payment_installment"],
+        errors="coerce",
+    ).fillna(0).astype(int)
     cost_cols = sorted(payment_schedule["cost_column"].unique())
 
     for col in group_cols:
@@ -227,6 +235,7 @@ def compute_incurred_capex_from_rows(
         group_cols
         + [
             "cost_type",
+            "payment_installment",
             "offset_days",
             "target_sockets",
             "incurred_month",

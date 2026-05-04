@@ -164,8 +164,8 @@ export default function PlanDetail() {
           <Loader2 size={20} className="animate-spin" />
           <span className="text-sm">Loading chart data…</span>
         </div>
-      ) : rows.length > 0 && assumptions && capexIncurred ? (
-        <PlanCharts rows={rows} assumptions={assumptions} capexIncurred={capexIncurred} />
+      ) : rows.length > 0 && capexIncurred ? (
+        <PlanCharts rows={rows} capexIncurred={capexIncurred} />
       ) : null}
 
       {deleteConfirm && (

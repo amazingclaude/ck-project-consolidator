@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react'
 import {
-  BarChart, ComposedChart, LineChart,
+  ComposedChart,
   Bar, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import type {
-  Assumptions,
   CapexIncurredData,
   CapexIncurredDetailPoint,
   CapexIncurredMonthlyPoint,
@@ -28,8 +27,6 @@ interface ChartPoint {
   label: string
   targetMonthly: number
   targetCumulative: number
-  seniorDMs: number
-  dms: number
 }
 
 interface CapexStackPoint {
@@ -42,10 +39,23 @@ interface CapexStackPoint {
   [key: string]: string | number
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartCard({
+  description,
+  title,
+  children,
+}: {
+  description?: string
+  title: string
+  children: React.ReactNode
+}) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-6">
-      <h3 className="text-sm font-semibold text-gray-700 mb-5">{title}</h3>
+      <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
+      {description ? (
+        <p className="mt-2 mb-5 text-sm text-gray-500">{description}</p>
+      ) : (
+        <div className="mb-5" />
+      )}
       {children}
     </div>
   )
@@ -55,13 +65,12 @@ const TICK = { fontSize: 11, fill: '#9ca3af' }
 const LEGEND = { fontSize: 12 }
 
 const COST_TYPE_CONFIG = [
-  { key: 'bom', name: 'BOM', fill: '#071224' },
+  { key: 'bom', name: 'BOM', fill: '#e67f11' },
   { key: 'connection', name: 'Connection', fill: '#4016f9' },
   { key: 'installation', name: 'Installation', fill: '#09b82f' },
 ]
 
 const OFFSET_COLORS = [
-  '#071224',
   '#4016f9',
   '#09b82f',
   '#ee5209',
@@ -73,7 +82,6 @@ const OFFSET_COLORS = [
 
 interface Props {
   rows: PlanRow[]
-  assumptions: Assumptions
   capexIncurred: CapexIncurredData
 }
 
@@ -118,9 +126,9 @@ function buildMonthlyCapexData(rows: CapexIncurredMonthlyPoint[]): CapexStackPoi
   return Array.from(byMonth.values()).sort(sortByMonth)
 }
 
-function buildOffsetCapexData(rows: CapexIncurredDetailPoint[], costType: string) {
+function buildInstallmentCapexData(rows: CapexIncurredDetailPoint[], costType: string) {
   const costRows = rows.filter(row => row.cost_type === costType)
-  const offsets = Array.from(new Set(costRows.map(row => row.offset_days))).sort((a, b) => a - b)
+  const installments = Array.from(new Set(costRows.map(row => row.payment_installment))).sort((a, b) => a - b)
   const byMonth = new Map<string, CapexStackPoint>()
 
   costRows.forEach(row => {
@@ -133,66 +141,77 @@ function buildOffsetCapexData(rows: CapexIncurredDetailPoint[], costType: string
       installation: 0,
       total_capex: 0,
     }
-    const key = `offset_${row.offset_days}`
+    const key = `installment_${row.payment_installment}`
     point[key] = Number(point[key] ?? 0) + Number(row.incurred_cost || 0)
     point.total_capex = Number(point.total_capex) + Number(row.incurred_cost || 0)
     byMonth.set(month, point)
   })
 
   return {
-    offsets,
+    installments,
     data: Array.from(byMonth.values()).sort(sortByMonth),
   }
 }
 
 function OffsetCapexChart({
   costType,
+  description,
   title,
   rows,
 }: {
   costType: 'bom' | 'connection' | 'installation'
+  description: string
   title: string
   rows: CapexIncurredDetailPoint[]
 }) {
-  const { offsets, data } = useMemo(
-    () => buildOffsetCapexData(rows, costType),
+  const { installments, data } = useMemo(
+    () => buildInstallmentCapexData(rows, costType),
     [rows, costType],
   )
 
   return (
-    <ChartCard title={title}>
+    <ChartCard title={title} description={description}>
       <ResponsiveContainer width="100%" height={280}>
-        <BarChart data={data} margin={{ top: 4, right: 20, left: 10, bottom: 4 }}>
+        <ComposedChart data={data} margin={{ top: 4, right: 20, left: 10, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
           <XAxis dataKey="label" tick={TICK} />
           <YAxis tick={TICK} tickFormatter={v => fmtCurrency(Number(v))} width={72} />
           <Tooltip
             formatter={(value: number | string, name: string) => [
               fmtCurrency(Number(value)),
-              String(name).replace('offset_', 'Offset '),
+              name === 'Total' ? 'Total' : String(name).replace('installment_', 'Installment '),
             ]}
           />
           <Legend
             wrapperStyle={LEGEND}
-            formatter={value => String(value).replace('offset_', 'Offset ')}
+            formatter={value => String(value).replace('installment_', 'Installment ')}
           />
-          {offsets.map((offset, index) => (
+          {installments.map((installment, index) => (
             <Bar
-              key={offset}
-              dataKey={`offset_${offset}`}
-              name={`offset_${offset}`}
+              key={installment}
+              dataKey={`installment_${installment}`}
+              name={`installment_${installment}`}
               stackId="capex"
               fill={OFFSET_COLORS[index % OFFSET_COLORS.length]}
               barSize={18}
             />
           ))}
-        </BarChart>
+          <Line
+            dataKey="total_capex"
+            name="Total"
+            stroke="black"
+            strokeWidth={0}
+            dot={false}
+            activeDot={false}
+            legendType="none"
+          />
+        </ComposedChart>
       </ResponsiveContainer>
     </ChartCard>
   )
 }
 
-export default function PlanCharts({ rows, assumptions, capexIncurred }: Props) {
+export default function PlanCharts({ rows, capexIncurred }: Props) {
   const [filter, setFilter] = useState<FilterState>(DEFAULT_FILTER)
 
   const filteredRows = useMemo(
@@ -211,7 +230,6 @@ export default function PlanCharts({ rows, assumptions, capexIncurred }: Props) 
   )
 
   const chartData = useMemo((): ChartPoint[] => {
-    const { delivery_capacity_sockets_per_year: cap } = assumptions
     let cumTarget = 0
 
     return Array.from({ length: 12 }, (_, i) => {
@@ -224,18 +242,13 @@ export default function PlanCharts({ rows, assumptions, capexIncurred }: Props) 
       )
       cumTarget += targetMonthly
 
-      const srMonthly = cap.senior_delivery_manager / 12
-      const dmMonthly = cap.delivery_manager / 12
-
       return {
         label: `M${m}`,
         targetMonthly,
         targetCumulative: cumTarget,
-        seniorDMs: srMonthly > 0 ? +(targetMonthly / srMonthly).toFixed(3) : 0,
-        dms: dmMonthly > 0 ? +(targetMonthly / dmMonthly).toFixed(3) : 0,
       }
     })
-  }, [filteredRows, assumptions])
+  }, [filteredRows])
 
   const monthlyCapexData = useMemo(
     () => buildMonthlyCapexData(filteredCapexMonthly),
@@ -246,7 +259,10 @@ export default function PlanCharts({ rows, assumptions, capexIncurred }: Props) 
     <div className="mt-6 space-y-5">
       <FilterBar rows={rows} filter={filter} onChange={setFilter} />
 
-      <ChartCard title="Monthly & Cumulative Target Sockets">
+      <ChartCard 
+      title="Monthly & Cumulative Target Sockets"
+      // description='placeholder'
+      >
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={chartData} margin={{ top: 4, right: 40, left: 10, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
@@ -286,7 +302,7 @@ export default function PlanCharts({ rows, assumptions, capexIncurred }: Props) 
               yAxisId="cumulative"
               dataKey="targetCumulative"
               name="Target (cumulative)"
-              stroke="#09b82f"
+              stroke="#4f09b8"
               strokeWidth={2.5}
               dot={false}
               type="monotone"
@@ -295,9 +311,12 @@ export default function PlanCharts({ rows, assumptions, capexIncurred }: Props) 
         </ResponsiveContainer>
       </ChartCard>
 
-      <ChartCard title="Monthly Incurred CAPEX by Cost Type">
+      <ChartCard title="Total Monthly CAPEX"
+      description='All CAPEX costs incurred by month, combining Connection, BOM, and Installation costs across all work packages'
+      >
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={monthlyCapexData} margin={{ top: 4, right: 20, left: 10, bottom: 4 }}>
+          <ComposedChart data={monthlyCapexData} margin={{ top: 20, right: 20, left: 10, bottom: 4 }}>
+            
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
             <XAxis dataKey="label" tick={TICK} />
             <YAxis tick={TICK} tickFormatter={v => fmtCurrency(Number(v))} width={72} />
@@ -318,46 +337,39 @@ export default function PlanCharts({ rows, assumptions, capexIncurred }: Props) 
                 barSize={18}
               />
             ))}
-          </BarChart>
+            <Line
+              dataKey="total_capex"
+              name="Total"
+              stroke="black"
+              strokeWidth={0}
+              dot={false}
+              activeDot={false}
+              legendType="none"
+            />
+          </ComposedChart>
         </ResponsiveContainer>
       </ChartCard>
 
       <OffsetCapexChart
         costType="bom"
-        title="BOM Incurred Cost by Month and Offset Days"
+        description="Costs incurred by month — Initial (66.67% of BOM cost/socket) 159 days before delivery, Final (33.33% of BOM cost/socket) 33 days before delivery."
+        title="Monthly BOM Costs (CAPEX)"
         rows={filteredCapexDetail}
       />
 
       <OffsetCapexChart
         costType="connection"
-        title="Connection Incurred Cost by Month and Offset Days"
+        description="Costs incurred by month — Initial (40% of connection cost/socket) 171 days before delivery, Final (60% of connection cost/socket) 33 days before delivery."
+        title="Monthly Connection Costs (CAPEX)"
         rows={filteredCapexDetail}
       />
 
       <OffsetCapexChart
         costType="installation"
-        title="Installation Incurred Cost by Month and Offset Days"
+        description="Costs incurred by month — each tranche is 25% of installation cost/socket per work package: First 56 days before delivery, Second & Third 49 days before delivery, Final 10 days before delivery."
+        title="Monthly Installation Costs (CAPEX)"
         rows={filteredCapexDetail}
       />
-
-      <ChartCard title="Delivery Managers Required per Month">
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={chartData} margin={{ top: 4, right: 20, left: 10, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-            <XAxis dataKey="label" tick={TICK} />
-            <YAxis tick={TICK} />
-            <Tooltip
-              formatter={(value: number | string, name: string) => [
-                Number(value).toFixed(2),
-                name,
-              ]}
-            />
-            <Legend wrapperStyle={LEGEND} />
-            <Line dataKey="seniorDMs" name="Senior Delivery Managers" stroke="#4016f9" strokeWidth={2} dot={false} type="monotone" />
-            <Line dataKey="dms" name="CK Delivery Managers" stroke="#09b82f" strokeWidth={2} dot={false} type="monotone" />
-          </LineChart>
-        </ResponsiveContainer>
-      </ChartCard>
     </div>
   )
 }

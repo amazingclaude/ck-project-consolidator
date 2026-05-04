@@ -59,6 +59,7 @@ export interface Assumptions {
   payment_schedule: {
     cost_type: string
     cost_column: string
+    payment_installment: number
     offset_days: number
     payment_pct: number
   }[]
@@ -132,6 +133,7 @@ export interface CapexIncurredDetailPoint {
   contract_name: string
   work_package_name: string
   cost_type: 'bom' | 'connection' | 'installation' | string
+  payment_installment: number
   offset_days: number
   target_sockets: number
   incurred_month: string
