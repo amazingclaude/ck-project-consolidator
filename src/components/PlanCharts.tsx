@@ -90,6 +90,18 @@ function formatMonthLabel(value: string) {
   return `${month}/${year.slice(2)}`
 }
 
+function formatTargetMonthLabel(startMonth: string, monthOffset: number) {
+  const [year, month] = startMonth.slice(0, 7).split('-').map(Number)
+  if (!year || !month) return `M${monthOffset + 1}`
+
+  const date = new Date(Date.UTC(year, month - 1 + monthOffset, 1))
+  return new Intl.DateTimeFormat('en-GB', {
+    month: 'short',
+    year: '2-digit',
+    timeZone: 'UTC',
+  }).format(date)
+}
+
 function sortByMonth<T extends { month: string }>(a: T, b: T) {
   return a.month.localeCompare(b.month)
 }
@@ -243,12 +255,12 @@ export default function PlanCharts({ rows, capexIncurred }: Props) {
       cumTarget += targetMonthly
 
       return {
-        label: `M${m}`,
+        label: formatTargetMonthLabel(capexIncurred.target_month_1, i),
         targetMonthly,
         targetCumulative: cumTarget,
       }
     })
-  }, [filteredRows])
+  }, [filteredRows, capexIncurred.target_month_1])
 
   const monthlyCapexData = useMemo(
     () => buildMonthlyCapexData(filteredCapexMonthly),
