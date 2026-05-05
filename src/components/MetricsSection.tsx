@@ -1,5 +1,5 @@
 import { Zap, PoundSterling, Users, TrendingUp } from 'lucide-react'
-import type { PlanMetrics } from '../api/plansApi'
+import type { Assumptions, PlanMetrics } from '../api/plansApi'
 
 function formatNumber(n: number) {
   return n.toLocaleString('en-GB')
@@ -19,10 +19,12 @@ const CAPEX_SEGMENTS = [
 
 interface Props {
   metrics: PlanMetrics
+  assumptions: Assumptions
 }
 
-export default function MetricsSection({ metrics }: Props) {
+export default function MetricsSection({ metrics, assumptions }: Props) {
   const { target_sockets, max_installer_resource_required, capex, workforce, asset_value } = metrics
+  const assetValuePerSocket = assumptions.value_per_socket.asset_value_per_socket
 
   const pct = (val: number) =>
     capex.total > 0 ? (val / capex.total) * 100 : 0
@@ -136,7 +138,9 @@ export default function MetricsSection({ metrics }: Props) {
           <p className="text-3xl font-extrabold text-gray-900 tabular-nums">
             {formatCurrency(asset_value)}
           </p>
-          <p className="text-xs text-gray-400 mt-1">Target sockets × £1,000</p>
+          <p className="text-xs text-gray-400 mt-1">
+            Target sites × £{formatNumber(assetValuePerSocket*5)}
+          </p>
         </div>
       </div>
     </div>

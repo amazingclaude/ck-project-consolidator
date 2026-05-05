@@ -155,7 +155,9 @@ export default function PlanDetail() {
           Could not load metrics: {metricsError}
         </div>
       )}
-      {!metricsLoading && metrics && <MetricsSection metrics={metrics} />}
+      {!metricsLoading && metrics && assumptions && (
+        <MetricsSection metrics={metrics} assumptions={assumptions} />
+      )}
       {!metricsLoading && assumptions && <AssumptionSheet assumptions={assumptions} />}
 
       {/* Charts */}

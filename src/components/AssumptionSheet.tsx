@@ -71,11 +71,12 @@ export default function AssumptionSheet({ assumptions }: Props) {
               <Row label="BOM"          value={`£${fmt(vps.capex_bom_per_socket)}`}          notes={notes?.capex_bom_per_socket} />
               <Row label="Installation" value={`£${fmt(vps.capex_installation_per_socket)}`} notes={notes?.capex_installation_per_socket} />
               <Row label="Connection"   value={`£${fmt(vps.capex_connection_per_socket)}`}   notes={notes?.capex_connection_per_socket} />
-              <Row label="Asset Value"  value={`£${fmt(vps.asset_value_per_socket)}`}         notes={notes?.asset_value_per_socket} />
+              <SectionHeader label="Value per site (£)" />
+              <Row label="Asset Value"  value={`£${fmt(vps.asset_value_per_socket*5)}`}         notes={notes?.asset_value_per_socket} />
 
               <SectionHeader label="Annual delivery capacity (no. of sockets)" />
-              <Row label="Senior Delivery Manager" value={`£${fmt(cap.senior_delivery_manager)}`} notes={notes?.senior_delivery_manager} />
-              <Row label="CK Delivery Manager"     value={`£${fmt(cap.delivery_manager)}`}         notes={notes?.delivery_manager} />
+              <Row label="Senior Delivery Manager" value={`${fmt(cap.senior_delivery_manager)}`} notes={notes?.senior_delivery_manager} />
+              <Row label="CK Delivery Manager"     value={`${fmt(cap.delivery_manager)}`}         notes={notes?.delivery_manager} />
             </tbody>
           </table>
         </div>
