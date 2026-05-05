@@ -16,7 +16,7 @@ from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -539,8 +539,28 @@ def get_plan_file(plan_id: str):
 
 # ─── Serve built React app in production ─────────────────────────────────────
 
-if os.path.exists("dist"):
-    app.mount("/", StaticFiles(directory="dist", html=True), name="static")
+DIST_DIR = Path("dist")
+INDEX_FILE = DIST_DIR / "index.html"
+
+if DIST_DIR.exists():
+    assets_dir = DIST_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(INDEX_FILE)
+
+    @app.get("/{full_path:path}")
+    async def serve_react_app(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        static_file = (DIST_DIR / full_path).resolve()
+        if static_file.is_file() and DIST_DIR.resolve() in static_file.parents:
+            return FileResponse(static_file)
+
+        return FileResponse(INDEX_FILE)
 
 
 if __name__ == "__main__":
