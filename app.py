@@ -174,7 +174,42 @@ def upload_mpp_for_conversion(filename: str, content: bytes) -> str:
 
 
 # ─── Metrics calculation (from SQL rows + assumptions.json) ───────────────────
+def compute_metrics_from_rows(rows: list[dict]) -> dict:
+    target_sockets = sum(r["target_sockets"] for r in rows)
+    monthly_sockets = [
+        sum(r.get(f"target_sockets_{month}", 0) or 0 for r in rows)
+        for month in range(1, 13)
+    ]
+    max_monthly_sockets = max(monthly_sockets, default=0)
+    installer_resource_per_site_per_week = ASSUMPTIONS["installer_resource_per_site_per_week"]
+    max_installer_resource_required = math.ceil((max_monthly_sockets / 5) / 4 * installer_resource_per_site_per_week)
 
+    bom_capex = sum(r["target_sockets"] * float(r["capex_bom_per_socket"]) for r in rows)
+    installation_capex = sum(r["target_sockets"] * float(r["capex_installation_per_socket"]) for r in rows)
+    connection_capex = sum(r["target_sockets"] * float(r["capex_connection_per_socket"]) for r in rows)
+    total_capex = sum(r["target_sockets"] * float(r["total_capex_per_socket"]) for r in rows)
+
+    sr_capacity = ASSUMPTIONS["delivery_capacity_sockets_per_year"]["senior_delivery_manager"]
+    dm_capacity = ASSUMPTIONS["delivery_capacity_sockets_per_year"]["delivery_manager"]
+    asset_value_per_socket = ASSUMPTIONS["value_per_socket"]["asset_value_per_socket"]
+
+    return {
+        "target_sockets": target_sockets,
+        "max_installer_resource_required": max_installer_resource_required,
+        "capex": {
+            "total": total_capex,
+            "bom": bom_capex,
+            "installation": installation_capex,
+            "connection": connection_capex,
+        },
+        "workforce": {
+            "senior_delivery_managers_required": math.ceil(target_sockets / sr_capacity) if sr_capacity else 0,
+            "delivery_managers_required": math.ceil(target_sockets / dm_capacity) if dm_capacity else 0,
+        },
+        "asset_value": float(target_sockets * asset_value_per_socket),
+    }
+'''
+#This is an alternative function to compute the total INCCURED CAPEX in 2026
 def compute_metrics_from_rows(rows: list[dict], plan_year: int = 2026) -> dict:
     target_sockets = sum(
         sum(
@@ -236,7 +271,7 @@ def compute_metrics_from_rows(rows: list[dict], plan_year: int = 2026) -> dict:
         },
         "asset_value": float(target_sockets * asset_value_per_socket),
     }
-
+'''
 
 def collapse_target_sockets_to_latest_month(df: pd.DataFrame) -> pd.DataFrame:
     """Collapse each row's target sockets into its latest non-zero target month."""
@@ -671,7 +706,7 @@ def get_plan_metrics(plan_id: str):
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
     rows = _db.get_rows(plan_id)
-    return compute_metrics_from_rows(rows, plan_year=plan["planYear"])
+    return compute_metrics_from_rows(rows)
 
 
 @app.get("/api/plans/{plan_id}/rows")
