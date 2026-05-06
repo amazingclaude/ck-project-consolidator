@@ -13,6 +13,8 @@ import type {
 import FilterBar, { DEFAULT_FILTER } from './FilterBar'
 import type { FilterState } from './FilterBar'
 
+const TARGET_SOCKET_MONTHS = 18
+
 function fmtNum(n: number) {
   return n.toLocaleString('en-GB')
 }
@@ -244,7 +246,7 @@ export default function PlanCharts({ rows, capexIncurred }: Props) {
   const chartData = useMemo((): ChartPoint[] => {
     let cumTarget = 0
 
-    return Array.from({ length: 12 }, (_, i) => {
+    return Array.from({ length: TARGET_SOCKET_MONTHS }, (_, i) => {
       const m = i + 1
       const monthKey = `target_sockets_${m}` as keyof PlanRow
 

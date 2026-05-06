@@ -9,14 +9,15 @@ export interface Plan {
   fileName: string
   fileSize: number
   fileType: string
+  planYear: number
 }
 
 interface PlansContextValue {
   plans: Plan[]
   loading: boolean
   error: string | null
-  addPlan: (name: string, file: File) => Promise<void>
-  updatePlan: (id: string, updates: { name?: string; file?: File }) => Promise<void>
+  addPlan: (name: string, planYear: number, file: File) => Promise<void>
+  updatePlan: (id: string, updates: { name?: string; planYear?: number; file?: File }) => Promise<void>
   archivePlan: (id: string) => Promise<void>
   unarchivePlan: (id: string) => Promise<void>
   deletePlan: (id: string) => Promise<void>
@@ -39,12 +40,12 @@ export function PlansProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false))
   }, [])
 
-  const addPlan = async (name: string, file: File) => {
-    const plan = await api.createPlan(name, file)
+  const addPlan = async (name: string, planYear: number, file: File) => {
+    const plan = await api.createPlan(name, planYear, file)
     setPlans(prev => [plan, ...prev])
   }
 
-  const updatePlan = async (id: string, updates: { name?: string; file?: File }) => {
+  const updatePlan = async (id: string, updates: { name?: string; planYear?: number; file?: File }) => {
     const updated = await api.patchPlan(id, updates)
     setPlans(prev => prev.map(p => (p.id === id ? updated : p)))
   }

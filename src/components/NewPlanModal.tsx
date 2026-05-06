@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, DragEvent, ChangeEvent } from 'react'
-import { X, Upload, FileText, Loader2 } from 'lucide-react'
+import { X, Upload, FileText, Loader2, CalendarDays } from 'lucide-react'
 import { usePlans } from '../context/PlansContext'
 import type { Plan } from '../context/PlansContext'
 
@@ -18,6 +18,7 @@ function formatBytes(bytes: number) {
 export default function NewPlanModal({ isOpen, onClose, planToEdit }: Props) {
   const { addPlan, updatePlan } = usePlans()
   const [name, setName] = useState('')
+  const [planYear, setPlanYear] = useState(new Date().getFullYear())
   const [file, setFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -27,6 +28,7 @@ export default function NewPlanModal({ isOpen, onClose, planToEdit }: Props) {
   useEffect(() => {
     if (isOpen) {
       setName(planToEdit?.name ?? '')
+      setPlanYear(planToEdit?.planYear ?? new Date().getFullYear())
       setFile(null)
       setIsDragging(false)
       setSubmitting(false)
@@ -37,7 +39,7 @@ export default function NewPlanModal({ isOpen, onClose, planToEdit }: Props) {
   if (!isOpen) return null
 
   const isEdit = planToEdit != null
-  const canSubmit = !submitting && name.trim().length > 0 && (isEdit || file != null)
+  const canSubmit = !submitting && name.trim().length > 0 && planYear > 0 && (isEdit || file != null)
 
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -57,9 +59,9 @@ export default function NewPlanModal({ isOpen, onClose, planToEdit }: Props) {
     setSubmitError(null)
     try {
       if (isEdit) {
-        await updatePlan(planToEdit.id, { name: name.trim(), file: file ?? undefined })
+        await updatePlan(planToEdit.id, { name: name.trim(), planYear, file: file ?? undefined })
       } else {
-        await addPlan(name.trim(), file!)
+        await addPlan(name.trim(), planYear, file!)
       }
       onClose()
     } catch (e) {
@@ -104,6 +106,24 @@ export default function NewPlanModal({ isOpen, onClose, planToEdit }: Props) {
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400"
             onKeyDown={e => e.key === 'Enter' && handleSubmit()}
           />
+        </div>
+
+        {/* Planning Year */}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Business Planning Year <span className="text-red-400">*</span>
+          </label>
+          <div className="relative">
+            <CalendarDays size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="number"
+              min="2000"
+              max="2100"
+              value={planYear}
+              onChange={e => setPlanYear(Number(e.target.value))}
+              className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400"
+            />
+          </div>
         </div>
 
         {/* File Upload */}

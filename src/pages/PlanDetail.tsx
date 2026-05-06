@@ -127,6 +127,7 @@ export default function PlanDetail() {
               month: 'long',
               year: 'numeric',
             })}
+            {` · Planning year ${plan.planYear}`}
             {plan.fileName && ` · ${plan.fileName}`}
           </p>
         </div>

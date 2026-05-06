@@ -11,6 +11,7 @@ CREATE TABLE plans (
     file_size  BIGINT         NULL,
     file_type  NVARCHAR(100)  NULL,
     created_at DATETIME2      NOT NULL DEFAULT GETUTCDATE(),
+    plan_year  INT            NOT NULL,
     status     NVARCHAR(20)   NOT NULL DEFAULT 'active'
 );
 

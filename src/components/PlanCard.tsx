@@ -107,6 +107,7 @@ export default function PlanCard({ plan, onEdit, onToggleArchive, onDelete }: Pr
       {/* Meta */}
       <div className="text-xs text-gray-400 space-y-0.5">
         <p>Created {formatDate(plan.createdAt)}</p>
+        <p>Planning year {plan.planYear}</p>
         {plan.fileName && (
           <p className="truncate">
             {plan.fileName} · {formatBytes(plan.fileSize)}

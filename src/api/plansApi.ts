@@ -15,9 +15,10 @@ export async function fetchPlans(): Promise<Plan[]> {
   return handleResponse<Plan[]>(await fetch('/api/plans'))
 }
 
-export async function createPlan(name: string, file: File): Promise<Plan> {
+export async function createPlan(name: string, planYear: number, file: File): Promise<Plan> {
   const form = new FormData()
   form.append('name', name)
+  form.append('plan_year', String(planYear))
   form.append('file', file)
   return handleResponse<Plan>(
     await fetch('/api/plans', { method: 'POST', body: form }),
@@ -26,11 +27,12 @@ export async function createPlan(name: string, file: File): Promise<Plan> {
 
 export async function patchPlan(
   id: string,
-  updates: { name?: string; status?: string; file?: File },
+  updates: { name?: string; status?: string; planYear?: number; file?: File },
 ): Promise<Plan> {
   const form = new FormData()
   if (updates.name !== undefined) form.append('name', updates.name)
   if (updates.status !== undefined) form.append('status', updates.status)
+  if (updates.planYear !== undefined) form.append('plan_year', String(updates.planYear))
   if (updates.file) form.append('file', updates.file)
   return handleResponse<Plan>(
     await fetch(`/api/plans/${id}`, { method: 'PATCH', body: form }),
@@ -144,6 +146,12 @@ export interface PlanRow {
   target_sockets_10: number
   target_sockets_11: number
   target_sockets_12: number
+  target_sockets_13: number
+  target_sockets_14: number
+  target_sockets_15: number
+  target_sockets_16: number
+  target_sockets_17: number
+  target_sockets_18: number
   planned_gate_1: number | null
   planned_gate_2: number | null
   planned_gate_3: number | null

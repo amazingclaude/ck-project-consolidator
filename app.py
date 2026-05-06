@@ -2,6 +2,7 @@ import io
 import json
 import math
 import os
+import re
 import urllib.error
 import urllib.request
 import uuid
@@ -56,6 +57,9 @@ if not _ASSUMPTIONS_PATH.is_absolute():
 with open(_ASSUMPTIONS_PATH) as _f:
     ASSUMPTIONS: dict = json.load(_f)
 
+TARGET_SOCKET_MONTHS = 18
+METRICS_TARGET_SOCKET_MONTHS = 12
+
 
 class ChatMessage(BaseModel):
     role: str
@@ -87,6 +91,12 @@ class RowUpdateBody(BaseModel):
     target_sockets_10: Optional[int] = None
     target_sockets_11: Optional[int] = None
     target_sockets_12: Optional[int] = None
+    target_sockets_13: Optional[int] = None
+    target_sockets_14: Optional[int] = None
+    target_sockets_15: Optional[int] = None
+    target_sockets_16: Optional[int] = None
+    target_sockets_17: Optional[int] = None
+    target_sockets_18: Optional[int] = None
     planned_gate_1: Optional[int] = None
     planned_gate_2: Optional[int] = None
     planned_gate_3: Optional[int] = None
@@ -165,20 +175,47 @@ def upload_mpp_for_conversion(filename: str, content: bytes) -> str:
 
 # ─── Metrics calculation (from SQL rows + assumptions.json) ───────────────────
 
-def compute_metrics_from_rows(rows: list[dict]) -> dict:
-    target_sockets = sum(r["target_sockets"] for r in rows)
+def compute_metrics_from_rows(rows: list[dict], plan_year: int = 2026) -> dict:
+    target_sockets = sum(
+        sum(
+            r.get(f"target_sockets_{month}", 0) or 0
+            for month in range(1, METRICS_TARGET_SOCKET_MONTHS + 1)
+        )
+        for r in rows
+    )
     monthly_sockets = [
         sum(r.get(f"target_sockets_{month}", 0) or 0 for r in rows)
-        for month in range(1, 13)
+        for month in range(1, METRICS_TARGET_SOCKET_MONTHS + 1)
     ]
     max_monthly_sockets = max(monthly_sockets, default=0)
     installer_resource_per_site_per_week = ASSUMPTIONS["installer_resource_per_site_per_week"]
     max_installer_resource_required = math.ceil((max_monthly_sockets / 5) / 4 * installer_resource_per_site_per_week)
 
-    bom_capex = sum(r["target_sockets"] * float(r["capex_bom_per_socket"]) for r in rows)
-    installation_capex = sum(r["target_sockets"] * float(r["capex_installation_per_socket"]) for r in rows)
-    connection_capex = sum(r["target_sockets"] * float(r["capex_connection_per_socket"]) for r in rows)
-    total_capex = sum(r["target_sockets"] * float(r["total_capex_per_socket"]) for r in rows)
+    incurred_capex = compute_incurred_capex_from_rows(rows)
+    monthly_by_type = pd.DataFrame(incurred_capex["monthly_by_type"])
+    capex_by_type = {"bom": 0.0, "installation": 0.0, "connection": 0.0}
+    total_capex = 0.0
+    if not monthly_by_type.empty:
+        monthly_by_type["incurred_month"] = pd.to_datetime(
+            monthly_by_type["incurred_month"],
+            errors="coerce",
+        )
+        monthly_by_type["incurred_cost"] = pd.to_numeric(
+            monthly_by_type["incurred_cost"],
+            errors="coerce",
+        ).fillna(0.0)
+        yearly_capex = monthly_by_type[
+            monthly_by_type["incurred_month"].dt.year.eq(plan_year)
+        ].copy()
+        if not yearly_capex.empty:
+            totals_by_month = yearly_capex.groupby(
+                ["incurred_month"],
+                as_index=False,
+            )["incurred_cost"].sum()
+            total_capex = float(totals_by_month["incurred_cost"].sum())
+            yearly_by_type = yearly_capex.groupby("cost_type")["incurred_cost"].sum()
+            for cost_type in capex_by_type:
+                capex_by_type[cost_type] = float(yearly_by_type.get(cost_type, 0.0))
 
     sr_capacity = ASSUMPTIONS["delivery_capacity_sockets_per_year"]["senior_delivery_manager"]
     dm_capacity = ASSUMPTIONS["delivery_capacity_sockets_per_year"]["delivery_manager"]
@@ -189,9 +226,9 @@ def compute_metrics_from_rows(rows: list[dict]) -> dict:
         "max_installer_resource_required": max_installer_resource_required,
         "capex": {
             "total": total_capex,
-            "bom": bom_capex,
-            "installation": installation_capex,
-            "connection": connection_capex,
+            "bom": capex_by_type["bom"],
+            "installation": capex_by_type["installation"],
+            "connection": capex_by_type["connection"],
         },
         "workforce": {
             "senior_delivery_managers_required": math.ceil(target_sockets / sr_capacity) if sr_capacity else 0,
@@ -199,6 +236,38 @@ def compute_metrics_from_rows(rows: list[dict]) -> dict:
         },
         "asset_value": float(target_sockets * asset_value_per_socket),
     }
+
+
+def collapse_target_sockets_to_latest_month(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse each row's target sockets into its latest non-zero target month."""
+    df_new = df.copy()
+    target_cols = [
+        col
+        for col in df_new.columns
+        if re.fullmatch(r"target_sockets_\d+", str(col))
+    ]
+    if not target_cols:
+        return df_new
+
+    target_cols = sorted(target_cols, key=lambda col: int(col.rsplit("_", 1)[1]))
+    df_new[target_cols] = df_new[target_cols].apply(
+        pd.to_numeric,
+        errors="coerce",
+    ).fillna(0)
+
+    active = df_new[target_cols].ne(0)
+    has_active = active.any(axis=1)
+    row_sums = df_new[target_cols].sum(axis=1)
+    latest_cols = active.iloc[:, ::-1].idxmax(axis=1)
+
+    df_new[target_cols] = 0
+    for idx in df_new.index[has_active]:
+        df_new.at[idx, latest_cols.at[idx]] = row_sums.at[idx]
+
+    if "target_sockets" in df_new.columns:
+        df_new["target_sockets"] = row_sums
+
+    return df_new
 
 
 def compute_incurred_capex_from_rows(
@@ -215,7 +284,7 @@ def compute_incurred_capex_from_rows(
 
     df = pd.DataFrame(rows)
     group_cols = ["region_name", "contract_name", "work_package_name"]
-    target_cols = [f"target_sockets_{i}" for i in range(1, 13)]
+    target_cols = [f"target_sockets_{i}" for i in range(1, TARGET_SOCKET_MONTHS + 1)]
     payment_schedule = pd.DataFrame(ASSUMPTIONS["payment_schedule"])
     if "payment_installment" not in payment_schedule.columns:
         payment_schedule["payment_installment"] = (
@@ -239,6 +308,7 @@ def compute_incurred_capex_from_rows(
             df[col] = 0.0
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
+    df = collapse_target_sockets_to_latest_month(df)
     start_month = pd.Timestamp(target_month_1).to_period("M").to_timestamp()
     socket_long = df.melt(
         id_vars=group_cols + cost_cols,
@@ -508,7 +578,11 @@ def list_plans():
 
 
 @app.post("/api/plans", status_code=201)
-async def create_plan(name: str = Form(...), file: UploadFile = File(...)):
+async def create_plan(
+    name: str = Form(...),
+    plan_year: int = Form(...),
+    file: UploadFile = File(...),
+):
     import db as _db
     container = get_container_client()
     plan_id = str(uuid.uuid4())
@@ -525,6 +599,7 @@ async def create_plan(name: str = Form(...), file: UploadFile = File(...)):
         file_size=len(content),
         file_type=file.content_type or "",
         created_at=created_at,
+        plan_year=plan_year,
     )
 
     df = pd.read_excel(io.BytesIO(content), sheet_name="Sheet1")
@@ -547,6 +622,7 @@ async def update_plan(
     plan_id: str,
     name: Optional[str] = Form(None),
     status: Optional[str] = Form(None),
+    plan_year: Optional[int] = Form(None),
     file: Optional[UploadFile] = File(None),
 ):
     import db as _db
@@ -559,6 +635,8 @@ async def update_plan(
         updates["plan_name"] = name
     if status is not None:
         updates["status"] = status
+    if plan_year is not None:
+        updates["plan_year"] = plan_year
 
     if file is not None:
         content = await file.read()
@@ -589,8 +667,11 @@ def delete_plan(plan_id: str):
 @app.get("/api/plans/{plan_id}/metrics")
 def get_plan_metrics(plan_id: str):
     import db as _db
+    plan = _db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
     rows = _db.get_rows(plan_id)
-    return compute_metrics_from_rows(rows)
+    return compute_metrics_from_rows(rows, plan_year=plan["planYear"])
 
 
 @app.get("/api/plans/{plan_id}/rows")

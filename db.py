@@ -20,7 +20,7 @@ except ImportError:
 
 AZURE_SQL_CONNECTION_STRING: str = os.getenv("AZURE_SQL_CONNECTION_STRING", "")
 
-_SOCKET_COLS = [f"target_sockets_{i}" for i in range(1, 13)]
+_SOCKET_COLS = [f"target_sockets_{i}" for i in range(1, 19)]
 _GATE_COLS = [f"planned_gate_{i}" for i in range(1, 5)] + [
     f"actual_gate_{i}" for i in range(1, 5)
 ]
@@ -67,7 +67,7 @@ def get_db() -> Iterator:
 
 # ─── Plans ────────────────────────────────────────────────────────────────────
 
-_PLAN_COLS = "plan_id, plan_name, blob_path, file_name, file_size, file_type, created_at, status"
+_PLAN_COLS = "plan_id, plan_name, blob_path, file_name, file_size, file_type, created_at, plan_year, status"
 
 
 def _row_to_plan(row) -> dict:
@@ -79,7 +79,8 @@ def _row_to_plan(row) -> dict:
         "fileSize": int(row[4]) if row[4] else 0,
         "fileType": row[5] or "",
         "createdAt": row[6].isoformat() if row[6] else "",
-        "status": row[7] or "active",
+        "planYear": int(row[7]),
+        "status": row[8] or "active",
     }
 
 
@@ -91,11 +92,12 @@ def create_plan(
     file_size: int,
     file_type: str,
     created_at: str,
+    plan_year: int,
 ) -> dict:
     with get_db() as conn:
         conn.cursor().execute(
-            f"INSERT INTO plans ({_PLAN_COLS}) VALUES (?,?,?,?,?,?,?,'active')",
-            (plan_id, plan_name, blob_path, file_name, file_size, file_type, created_at),
+            f"INSERT INTO plans ({_PLAN_COLS}) VALUES (?,?,?,?,?,?,?,?,'active')",
+            (plan_id, plan_name, blob_path, file_name, file_size, file_type, created_at, plan_year),
         )
     return {
         "id": plan_id,
@@ -105,6 +107,7 @@ def create_plan(
         "fileSize": file_size,
         "fileType": file_type,
         "createdAt": created_at,
+        "planYear": plan_year,
         "status": "active",
     }
 
@@ -125,7 +128,7 @@ def list_plans() -> list[dict]:
 
 
 def update_plan(plan_id: str, **kwargs) -> Optional[dict]:
-    allowed = {"plan_name", "status", "blob_path", "file_name", "file_size", "file_type"}
+    allowed = {"plan_name", "status", "blob_path", "file_name", "file_size", "file_type", "plan_year"}
     parts, params = [], []
     for k, v in kwargs.items():
         if k in allowed and v is not None:
@@ -194,21 +197,20 @@ def sync_rows(plan_id: str, df: pd.DataFrame) -> int:
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM plan_rows WHERE plan_id = ?", (plan_id,))
+        socket_col_sql = ", ".join(_SOCKET_COLS)
+        placeholders = ", ".join("?" for _ in range(1 + 3 + len(_CAPEX_COLS) + 1 + len(_SOCKET_COLS) + len(_GATE_COLS)))
         for _, row in df.iterrows():
             cur.execute(
-                """
+                f"""
                 INSERT INTO plan_rows (
                     plan_id, region_name, contract_name, work_package_name,
                     capex_bom_per_socket, capex_installation_per_socket,
                     capex_connection_per_socket, total_capex_per_socket,
                     target_sockets,
-                    target_sockets_1,  target_sockets_2,  target_sockets_3,
-                    target_sockets_4,  target_sockets_5,  target_sockets_6,
-                    target_sockets_7,  target_sockets_8,  target_sockets_9,
-                    target_sockets_10, target_sockets_11, target_sockets_12,
+                    {socket_col_sql},
                     planned_gate_1, planned_gate_2, planned_gate_3, planned_gate_4,
                     actual_gate_1,  actual_gate_2,  actual_gate_3,  actual_gate_4
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES ({placeholders})
                 """,
                 (
                     plan_id,
@@ -220,7 +222,7 @@ def sync_rows(plan_id: str, df: pd.DataFrame) -> int:
                     float(row["capex_connection_per_socket"]),
                     float(row["total_capex_per_socket"]),
                     int(row["target_sockets"]),
-                    *[int(row[f"target_sockets_{i}"]) for i in range(1, 13)],
+                    *[int(row[col]) for col in _SOCKET_COLS],
                     *[optional_int(row[col]) for col in _GATE_COLS],
                 ),
             )
@@ -230,16 +232,14 @@ def sync_rows(plan_id: str, df: pd.DataFrame) -> int:
 def get_rows(plan_id: str) -> list[dict]:
     with get_db() as conn:
         cur = conn.cursor()
+        socket_col_sql = ", ".join(_SOCKET_COLS)
         cur.execute(
-            """
+            f"""
             SELECT row_id, region_name, contract_name, work_package_name,
                    capex_bom_per_socket, capex_installation_per_socket,
                    capex_connection_per_socket, total_capex_per_socket,
                    target_sockets,
-                   target_sockets_1,  target_sockets_2,  target_sockets_3,
-                   target_sockets_4,  target_sockets_5,  target_sockets_6,
-                   target_sockets_7,  target_sockets_8,  target_sockets_9,
-                   target_sockets_10, target_sockets_11, target_sockets_12,
+                   {socket_col_sql},
                    planned_gate_1, planned_gate_2, planned_gate_3, planned_gate_4,
                    actual_gate_1,  actual_gate_2,  actual_gate_3,  actual_gate_4
             FROM plan_rows WHERE plan_id = ?

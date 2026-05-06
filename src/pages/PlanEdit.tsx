@@ -5,6 +5,8 @@ import { usePlans } from '../context/PlansContext'
 import { fetchPlanRows, updatePlanRow } from '../api/plansApi'
 import type { PlanRow } from '../api/plansApi'
 
+const TARGET_SOCKET_MONTHS = 18
+
 // ─── Column definitions ────────────────────────────────────────────────────────
 
 const TEXT_COLS: { key: keyof PlanRow; label: string }[] = [
@@ -20,7 +22,7 @@ const CAPEX_COLS: { key: keyof PlanRow; label: string }[] = [
 ]
 
 const SOCKET_COLS: { key: keyof PlanRow; label: string }[] = Array.from(
-  { length: 12 },
+  { length: TARGET_SOCKET_MONTHS },
   (_, i) => ({ key: `target_sockets_${i + 1}` as keyof PlanRow, label: `M${i + 1}` }),
 )
 
@@ -113,7 +115,7 @@ export default function PlanEdit() {
         }
         if ((key as string).startsWith('target_sockets_')) {
           updated.target_sockets = Array.from(
-            { length: 12 },
+            { length: TARGET_SOCKET_MONTHS },
             (_, i) => Number(updated[`target_sockets_${i + 1}` as keyof PlanRow]) || 0,
           ).reduce((a, b) => a + b, 0)
         }
