@@ -25,6 +25,7 @@ interface Props {
 export default function MetricsSection({ metrics, assumptions }: Props) {
   const { target_sockets, max_installer_resource_required, capex, workforce, asset_value } = metrics
   const assetValuePerSocket = assumptions.value_per_socket.asset_value_per_socket
+  const avgSocketsPerSite = assumptions.avg_sockets_per_sites ?? 5
 
   const pct = (val: number) =>
     capex.total > 0 ? (val / capex.total) * 100 : 0
@@ -139,7 +140,7 @@ export default function MetricsSection({ metrics, assumptions }: Props) {
             {formatCurrency(asset_value)}
           </p>
           <p className="text-xs text-gray-400 mt-1">
-            Target sites × £{formatNumber(assetValuePerSocket*5)}
+            Target sites × £{formatNumber(assetValuePerSocket * avgSocketsPerSite)}
           </p>
         </div>
       </div>

@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Archive, Pencil, Trash2, Loader2, AlertCircle } from 'lucide-react'
 import { usePlans } from '../context/PlansContext'
-import { fetchPlanMetrics, fetchAssumptions, fetchPlanRows, fetchCapexIncurred } from '../api/plansApi'
-import type { PlanMetrics, Assumptions, PlanRow, CapexIncurredData } from '../api/plansApi'
+import { fetchPlanMetrics, fetchAssumptions, fetchPlanRows, fetchCapexIncurred, updateAssumptions } from '../api/plansApi'
+import type { PlanMetrics, Assumptions, PlanRow, CapexIncurredData, AssumptionsUpdate } from '../api/plansApi'
 import MetricsSection, { MetricsSkeleton } from '../components/MetricsSection'
 import AssumptionSheet from '../components/AssumptionSheet'
 import PlanCharts from '../components/PlanCharts'
@@ -91,6 +91,13 @@ export default function PlanDetail() {
     else archivePlan(plan.id).catch(console.error)
   }
 
+  const handleAssumptionsSave = async (updates: AssumptionsUpdate) => {
+    const updatedAssumptions = await updateAssumptions(updates)
+    const updatedMetrics = await fetchPlanMetrics(plan.id)
+    setAssumptions(updatedAssumptions)
+    setMetrics(updatedMetrics)
+  }
+
   return (
     <div className="px-8 py-8 min-h-full">
       {/* Back breadcrumb */}
@@ -158,7 +165,9 @@ export default function PlanDetail() {
       {!metricsLoading && metrics && assumptions && (
         <MetricsSection metrics={metrics} assumptions={assumptions} />
       )}
-      {!metricsLoading && assumptions && <AssumptionSheet assumptions={assumptions} />}
+      {!metricsLoading && assumptions && (
+        <AssumptionSheet assumptions={assumptions} onSave={handleAssumptionsSave} />
+      )}
 
       {/* Charts */}
       {rowsLoading ? (

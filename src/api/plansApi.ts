@@ -56,6 +56,9 @@ export interface Assumptions {
     senior_delivery_manager: number
     delivery_manager: number
   }
+  installer_resource_per_site_per_week: number
+  avg_sockets_per_sites?: number
+  asset_value_per_sites?: number
   payment_schedule: {
     cost_type: string
     cost_column: string
@@ -75,6 +78,24 @@ export interface Assumptions {
 
 export async function fetchAssumptions(): Promise<Assumptions> {
   return handleResponse<Assumptions>(await fetch('/api/assumptions'))
+}
+
+export interface AssumptionsUpdate {
+  senior_delivery_manager: number
+  delivery_manager: number
+  installer_resource_per_site_per_week: number
+  avg_sockets_per_sites: number
+  asset_value_per_sites: number
+}
+
+export async function updateAssumptions(data: AssumptionsUpdate): Promise<Assumptions> {
+  return handleResponse<Assumptions>(
+    await fetch('/api/assumptions', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  )
 }
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────

@@ -97,6 +97,14 @@ class RowUpdateBody(BaseModel):
     actual_gate_4: Optional[int] = None
 
 
+class AssumptionsUpdateBody(BaseModel):
+    senior_delivery_manager: float = Field(gt=0)
+    delivery_manager: float = Field(gt=0)
+    installer_resource_per_site_per_week: float = Field(gt=0)
+    avg_sockets_per_sites: float = Field(gt=0)
+    asset_value_per_sites: float = Field(ge=0)
+
+
 # ─── Blob storage helpers (Excel files only) ──────────────────────────────────
 
 def get_container_client():
@@ -164,7 +172,9 @@ def compute_metrics_from_rows(rows: list[dict]) -> dict:
         for month in range(1, 13)
     ]
     max_monthly_sockets = max(monthly_sockets, default=0)
-    max_installer_resource_required = math.ceil((max_monthly_sockets / 5) / 4 * 1.5)
+    installer_resource_per_site_per_week = ASSUMPTIONS["installer_resource_per_site_per_week"]
+    max_installer_resource_required = math.ceil((max_monthly_sockets / 5) / 4 * installer_resource_per_site_per_week)
+
     bom_capex = sum(r["target_sockets"] * float(r["capex_bom_per_socket"]) for r in rows)
     installation_capex = sum(r["target_sockets"] * float(r["capex_installation_per_socket"]) for r in rows)
     connection_capex = sum(r["target_sockets"] * float(r["capex_connection_per_socket"]) for r in rows)
@@ -173,7 +183,6 @@ def compute_metrics_from_rows(rows: list[dict]) -> dict:
     sr_capacity = ASSUMPTIONS["delivery_capacity_sockets_per_year"]["senior_delivery_manager"]
     dm_capacity = ASSUMPTIONS["delivery_capacity_sockets_per_year"]["delivery_manager"]
     asset_value_per_socket = ASSUMPTIONS["value_per_socket"]["asset_value_per_socket"]
-
 
     return {
         "target_sockets": target_sockets,
@@ -407,6 +416,38 @@ def health():
 
 @app.get("/api/assumptions")
 def get_assumptions():
+    return ASSUMPTIONS
+
+
+@app.put("/api/assumptions")
+def update_assumptions(body: AssumptionsUpdateBody):
+    asset_value_per_socket = body.asset_value_per_sites / body.avg_sockets_per_sites
+    updated = {
+        **ASSUMPTIONS,
+        "delivery_capacity_sockets_per_year": {
+            **ASSUMPTIONS.get("delivery_capacity_sockets_per_year", {}),
+            "senior_delivery_manager": body.senior_delivery_manager,
+            "delivery_manager": body.delivery_manager,
+        },
+        "installer_resource_per_site_per_week": body.installer_resource_per_site_per_week,
+        "avg_sockets_per_sites": body.avg_sockets_per_sites,
+        "asset_value_per_sites": body.asset_value_per_sites,
+        "value_per_socket": {
+            **ASSUMPTIONS.get("value_per_socket", {}),
+            "asset_value_per_socket": asset_value_per_socket,
+        },
+    }
+
+    try:
+        _ASSUMPTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_ASSUMPTIONS_PATH, "w", encoding="utf-8") as f:
+            json.dump(updated, f, indent=2)
+            f.write("\n")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not save assumptions: {exc}") from exc
+
+    ASSUMPTIONS.clear()
+    ASSUMPTIONS.update(updated)
     return ASSUMPTIONS
 
 
