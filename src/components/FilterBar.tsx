@@ -27,20 +27,20 @@ const selectClass =
 
 export default function FilterBar({ rows, filter, onChange }: Props) {
   const regions = useMemo(
-    () => unique(rows.map(r => r.custom_region_name as string)),
+    () => unique(rows.map(r => r.region_name)),
     [rows],
   )
 
   const contracts = useMemo(() => {
-    const src = filter.region === ALL ? rows : rows.filter(r => r.custom_region_name === filter.region)
-    return unique(src.map(r => r.contract_name as string))
+    const src = filter.region === ALL ? rows : rows.filter(r => r.region_name === filter.region)
+    return unique(src.map(r => r.contract_name))
   }, [rows, filter.region])
 
   const workPackages = useMemo(() => {
     let src = rows
-    if (filter.region !== ALL) src = src.filter(r => r.custom_region_name === filter.region)
+    if (filter.region !== ALL) src = src.filter(r => r.region_name === filter.region)
     if (filter.contract !== ALL) src = src.filter(r => r.contract_name === filter.contract)
-    return unique(src.map(r => r.work_package_name as string))
+    return unique(src.map(r => r.work_package_name))
   }, [rows, filter.region, filter.contract])
 
   const isFiltered = filter.region !== ALL || filter.contract !== ALL || filter.workPackage !== ALL

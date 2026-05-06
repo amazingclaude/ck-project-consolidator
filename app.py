@@ -1,5 +1,6 @@
 import io
 import json
+import math
 import os
 import urllib.error
 import urllib.request
@@ -15,7 +16,7 @@ from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -34,6 +35,11 @@ if os.getenv("ENV") != "production":
 
 AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
 CONTAINER_NAME = os.getenv("AZURE_STORAGE_CONTAINER", "plans")
+MPP_CONVERTER_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING_MPP_CONVERTER", "")
+MPP_CONVERTER_INPUT_CONTAINER_NAME = os.getenv(
+    "AZURE_STORAGE_CONTAINER_MPP_CONVERTER_IN",
+    "mppinputnew",
+)
 AI_FOUNDRY_ENDPOINT = os.getenv("AI_FOUNDRY_ENDPOINT", "")
 AI_FOUNDRY_API_KEY = os.getenv("AI_FOUNDRY_API_KEY", "")
 AI_FOUNDRY_DEPLOYMENT = os.getenv("AI_FOUNDRY_DEPLOYMENT", "")
@@ -60,7 +66,46 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=30)
 
 
-# ─── Storage helpers ──────────────────────────────────────────────────────────
+class RowUpdateBody(BaseModel):
+    region_name: Optional[str] = None
+    contract_name: Optional[str] = None
+    work_package_name: Optional[str] = None
+    capex_bom_per_socket: Optional[float] = None
+    capex_installation_per_socket: Optional[float] = None
+    capex_connection_per_socket: Optional[float] = None
+    total_capex_per_socket: Optional[float] = None
+    target_sockets: Optional[int] = None
+    target_sockets_1: Optional[int] = None
+    target_sockets_2: Optional[int] = None
+    target_sockets_3: Optional[int] = None
+    target_sockets_4: Optional[int] = None
+    target_sockets_5: Optional[int] = None
+    target_sockets_6: Optional[int] = None
+    target_sockets_7: Optional[int] = None
+    target_sockets_8: Optional[int] = None
+    target_sockets_9: Optional[int] = None
+    target_sockets_10: Optional[int] = None
+    target_sockets_11: Optional[int] = None
+    target_sockets_12: Optional[int] = None
+    planned_gate_1: Optional[int] = None
+    planned_gate_2: Optional[int] = None
+    planned_gate_3: Optional[int] = None
+    planned_gate_4: Optional[int] = None
+    actual_gate_1: Optional[int] = None
+    actual_gate_2: Optional[int] = None
+    actual_gate_3: Optional[int] = None
+    actual_gate_4: Optional[int] = None
+
+
+class AssumptionsUpdateBody(BaseModel):
+    senior_delivery_manager: float = Field(gt=0)
+    delivery_manager: float = Field(gt=0)
+    installer_resource_per_site_per_week: float = Field(gt=0)
+    avg_sockets_per_sites: float = Field(gt=0)
+    asset_value_per_sites: float = Field(ge=0)
+
+
+# ─── Blob storage helpers (Excel files only) ──────────────────────────────────
 
 def get_container_client():
     if not AZURE_CONNECTION_STRING:
@@ -73,68 +118,204 @@ def get_container_client():
     try:
         container.create_container()
     except Exception:
-        pass  # container already exists
+        pass
     return container
 
 
-def read_metadata(container, plan_id: str) -> dict:
+def upload_excel(container, plan_id: str, filename: str, content: bytes) -> str:
+    blob_path = f"{plan_id}/{filename}"
+    container.get_blob_client(blob_path).upload_blob(content, overwrite=True)
+    return blob_path
+
+
+def delete_plan_blobs(container, plan_id: str) -> None:
+    for blob in list(container.list_blobs(name_starts_with=f"{plan_id}/")):
+        container.delete_blob(blob.name)
+
+
+def get_excel_blob(container, plan_id: str):
+    blobs = [b for b in container.list_blobs(name_starts_with=f"{plan_id}/")]
+    return blobs[0] if blobs else None
+
+
+def get_mpp_converter_input_container_client():
+    if not MPP_CONVERTER_CONNECTION_STRING:
+        raise HTTPException(
+            status_code=500,
+            detail="AZURE_STORAGE_CONNECTION_STRING_MPP_CONVERTER is not configured",
+        )
+    service = BlobServiceClient.from_connection_string(MPP_CONVERTER_CONNECTION_STRING)
+    container = service.get_container_client(MPP_CONVERTER_INPUT_CONTAINER_NAME)
     try:
-        blob = container.get_blob_client(f"{plan_id}/metadata.json")
-        return json.loads(blob.download_blob().readall())
+        container.create_container()
     except Exception:
-        raise HTTPException(status_code=404, detail="Plan not found")
+        pass
+    return container
 
 
-def write_metadata(container, metadata: dict) -> None:
-    plan_id = metadata["id"]
-    blob = container.get_blob_client(f"{plan_id}/metadata.json")
-    blob.upload_blob(json.dumps(metadata), overwrite=True)
+def safe_upload_filename(filename: str | None) -> str:
+    return (filename or "").replace("\\", "/").split("/")[-1].strip()
 
 
-def compute_metrics(content: bytes) -> dict:
-    df = pd.read_excel(io.BytesIO(content), sheet_name="Sheet1")
+def upload_mpp_for_conversion(filename: str, content: bytes) -> str:
+    container = get_mpp_converter_input_container_client()
+    container.get_blob_client(filename).upload_blob(content, overwrite=True)
+    return filename
 
-    def col_sum(col: str) -> float:
-        return float(df[col].fillna(0).sum()) if col in df.columns else 0.0
 
-    planned_sockets = int(col_sum("planned_sockets"))
-    target_sockets = int(col_sum("target_sockets"))
+# ─── Metrics calculation (from SQL rows + assumptions.json) ───────────────────
+
+def compute_metrics_from_rows(rows: list[dict]) -> dict:
+    target_sockets = sum(r["target_sockets"] for r in rows)
+    monthly_sockets = [
+        sum(r.get(f"target_sockets_{month}", 0) or 0 for r in rows)
+        for month in range(1, 13)
+    ]
+    max_monthly_sockets = max(monthly_sockets, default=0)
+    installer_resource_per_site_per_week = ASSUMPTIONS["installer_resource_per_site_per_week"]
+    max_installer_resource_required = math.ceil((max_monthly_sockets / 5) / 4 * installer_resource_per_site_per_week)
+
+    bom_capex = sum(r["target_sockets"] * float(r["capex_bom_per_socket"]) for r in rows)
+    installation_capex = sum(r["target_sockets"] * float(r["capex_installation_per_socket"]) for r in rows)
+    connection_capex = sum(r["target_sockets"] * float(r["capex_connection_per_socket"]) for r in rows)
+    total_capex = sum(r["target_sockets"] * float(r["total_capex_per_socket"]) for r in rows)
 
     sr_capacity = ASSUMPTIONS["delivery_capacity_sockets_per_year"]["senior_delivery_manager"]
     dm_capacity = ASSUMPTIONS["delivery_capacity_sockets_per_year"]["delivery_manager"]
-    asset_per_socket = ASSUMPTIONS["value_per_socket"]["asset_value"]
+    asset_value_per_socket = ASSUMPTIONS["value_per_socket"]["asset_value_per_socket"]
 
     return {
-        "targets_vs_planned": {
-            "target_sockets": target_sockets,
-            "planned_sockets": planned_sockets,
-        },
+        "target_sockets": target_sockets,
+        "max_installer_resource_required": max_installer_resource_required,
         "capex": {
-            "total": col_sum("total_capex"),
-            "bom": col_sum("capex_bom"),
-            "installation": col_sum("capex_installation"),
-            "connection": col_sum("capex_connection"),
+            "total": total_capex,
+            "bom": bom_capex,
+            "installation": installation_capex,
+            "connection": connection_capex,
         },
         "workforce": {
-            "senior_delivery_managers_required": round(planned_sockets / sr_capacity, 1) if sr_capacity else 0.0,
-            "delivery_managers_required": round(planned_sockets / dm_capacity, 1) if dm_capacity else 0.0,
+            "senior_delivery_managers_required": math.ceil(target_sockets / sr_capacity) if sr_capacity else 0,
+            "delivery_managers_required": math.ceil(target_sockets / dm_capacity) if dm_capacity else 0,
         },
-        "asset_value": float(target_sockets * asset_per_socket),
+        "asset_value": float(target_sockets * asset_value_per_socket),
     }
 
 
-def write_metrics_cache(container, plan_id: str, metrics: dict) -> None:
-    blob = container.get_blob_client(f"{plan_id}/metrics.json")
-    blob.upload_blob(json.dumps(metrics), overwrite=True)
+def compute_incurred_capex_from_rows(
+    rows: list[dict],
+    target_month_1: str = "2026-01-01",
+) -> dict:
+    """Calculate incurred CAPEX timing from SQL rows and assumptions.json.
 
+    This mirrors notebook/capex_calculation.py while returning JSON-safe rows for
+    the React charts.
+    """
+    if not rows:
+        return {"target_month_1": target_month_1, "detail": [], "monthly_by_type": []}
+
+    df = pd.DataFrame(rows)
+    group_cols = ["region_name", "contract_name", "work_package_name"]
+    target_cols = [f"target_sockets_{i}" for i in range(1, 13)]
+    payment_schedule = pd.DataFrame(ASSUMPTIONS["payment_schedule"])
+    if "payment_installment" not in payment_schedule.columns:
+        payment_schedule["payment_installment"] = (
+            payment_schedule.groupby("cost_type").cumcount() + 1
+        )
+    payment_schedule["payment_installment"] = pd.to_numeric(
+        payment_schedule["payment_installment"],
+        errors="coerce",
+    ).fillna(0).astype(int)
+    cost_cols = sorted(payment_schedule["cost_column"].unique())
+
+    for col in group_cols:
+        if col not in df.columns:
+            df[col] = ""
+    for col in target_cols:
+        if col not in df.columns:
+            df[col] = 0
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    for col in cost_cols:
+        if col not in df.columns:
+            df[col] = 0.0
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+    start_month = pd.Timestamp(target_month_1).to_period("M").to_timestamp()
+    socket_long = df.melt(
+        id_vars=group_cols + cost_cols,
+        value_vars=target_cols,
+        var_name="target_socket_column",
+        value_name="monthly_target_sockets",
+    )
+    socket_long["target_sockets"] = pd.to_numeric(
+        socket_long["monthly_target_sockets"],
+        errors="coerce",
+    ).fillna(0)
+    socket_long = socket_long.drop(columns=["monthly_target_sockets"])
+    socket_long = socket_long[socket_long["target_sockets"] != 0].copy()
+
+    if socket_long.empty:
+        return {"target_month_1": target_month_1, "detail": [], "monthly_by_type": []}
+
+    socket_long["target_month_number"] = (
+        socket_long["target_socket_column"].str.extract(r"(\d+)$").astype(int)
+    )
+    socket_long["target_month_end"] = socket_long["target_month_number"].apply(
+        lambda month_no: start_month + pd.DateOffset(months=int(month_no) - 1) + pd.offsets.MonthEnd(0)
+    )
+
+    detail = socket_long.merge(payment_schedule, how="cross")
+    detail["cost_per_socket"] = 0.0
+    for cost_column in cost_cols:
+        mask = detail["cost_column"].eq(cost_column)
+        detail.loc[mask, "cost_per_socket"] = detail.loc[mask, cost_column]
+
+    detail["incurred_date"] = detail["target_month_end"] + pd.to_timedelta(
+        detail["offset_days"],
+        unit="D",
+    )
+    detail["incurred_month"] = detail["incurred_date"].dt.to_period("M").dt.to_timestamp("M")
+    detail["incurred_cost"] = (
+        detail["target_sockets"] * detail["cost_per_socket"] * detail["payment_pct"]
+    )
+
+    monthly_by_type = (
+        detail.groupby(group_cols + ["incurred_month", "cost_type"], as_index=False)[
+            "incurred_cost"
+        ]
+        .sum()
+        .sort_values(group_cols + ["incurred_month", "cost_type"])
+    )
+
+    detail_out = detail[
+        group_cols
+        + [
+            "cost_type",
+            "payment_installment",
+            "offset_days",
+            "target_sockets",
+            "incurred_month",
+            "incurred_cost",
+        ]
+    ].copy()
+    monthly_out = monthly_by_type.copy()
+
+    for frame in (detail_out, monthly_out):
+        frame["incurred_month"] = frame["incurred_month"].dt.strftime("%Y-%m-%d")
+        frame["incurred_cost"] = frame["incurred_cost"].astype(float)
+
+    return {
+        "target_month_1": target_month_1,
+        "detail": detail_out.to_dict(orient="records"),
+        "monthly_by_type": monthly_out.to_dict(orient="records"),
+    }
+
+
+# ─── AI Foundry helpers ───────────────────────────────────────────────────────
 
 def build_foundry_chat_url() -> str:
     endpoint = AI_FOUNDRY_ENDPOINT.rstrip("/")
     if not endpoint:
-        raise HTTPException(
-            status_code=500,
-            detail="AI_FOUNDRY_ENDPOINT is not configured",
-        )
+        raise HTTPException(status_code=500, detail="AI_FOUNDRY_ENDPOINT is not configured")
 
     if "/openai/v1" in endpoint:
         if endpoint.endswith("/chat/completions"):
@@ -161,10 +342,7 @@ def ask_foundry(messages: list[ChatMessage]) -> str:
         return ask_foundry_agent(messages)
 
     if not AI_FOUNDRY_API_KEY:
-        raise HTTPException(
-            status_code=500,
-            detail="AI_FOUNDRY_API_KEY is not configured",
-        )
+        raise HTTPException(status_code=500, detail="AI_FOUNDRY_API_KEY is not configured")
 
     payload = {
         "messages": [message.dict() for message in messages],
@@ -177,35 +355,22 @@ def ask_foundry(messages: list[ChatMessage]) -> str:
     request = urllib.request.Request(
         build_foundry_chat_url(),
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "api-key": AI_FOUNDRY_API_KEY,
-        },
+        headers={"Content-Type": "application/json", "api-key": AI_FOUNDRY_API_KEY},
         method="POST",
     )
-
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise HTTPException(
-            status_code=exc.code,
-            detail=body or "AI Foundry request failed",
-        ) from exc
+        raise HTTPException(status_code=exc.code, detail=body or "AI Foundry request failed") from exc
     except urllib.error.URLError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Could not reach AI Foundry endpoint: {exc.reason}",
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"Could not reach AI Foundry endpoint: {exc.reason}") from exc
 
     try:
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="AI Foundry returned an unexpected response shape",
-        ) from exc
+        raise HTTPException(status_code=502, detail="AI Foundry returned an unexpected response shape") from exc
 
 
 def ask_foundry_agent(messages: list[ChatMessage]) -> str:
@@ -214,21 +379,14 @@ def ask_foundry_agent(messages: list[ChatMessage]) -> str:
             status_code=500,
             detail="AI_FOUNDRY_AGENT_NAME and AI_FOUNDRY_AGENT_VERSION are required for project agent endpoints",
         )
-
     try:
         from azure.ai.projects import AIProjectClient
         from azure.identity import DefaultAzureCredential
     except ImportError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail="Install azure-ai-projects>=2.0.0 and azure-identity>=1.17.0 to use AI Foundry project agents",
-        ) from exc
+        raise HTTPException(status_code=500, detail="Install azure-ai-projects and azure-identity") from exc
 
     try:
-        project_client = AIProjectClient(
-            endpoint=AI_FOUNDRY_ENDPOINT,
-            credential=DefaultAzureCredential(),
-        )
+        project_client = AIProjectClient(endpoint=AI_FOUNDRY_ENDPOINT, credential=DefaultAzureCredential())
         openai_client = project_client.get_openai_client()
         response = openai_client.responses.create(
             input=[message.dict() for message in messages if message.role != "system"],
@@ -241,18 +399,11 @@ def ask_foundry_agent(messages: list[ChatMessage]) -> str:
             },
         )
     except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI Foundry agent request failed: {exc}",
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"AI Foundry agent request failed: {exc}") from exc
 
     output_text = getattr(response, "output_text", None)
     if not output_text:
-        raise HTTPException(
-            status_code=502,
-            detail="AI Foundry agent returned an empty response",
-        )
-
+        raise HTTPException(status_code=502, detail="AI Foundry agent returned an empty response")
     return output_text
 
 
@@ -268,12 +419,43 @@ def get_assumptions():
     return ASSUMPTIONS
 
 
+@app.put("/api/assumptions")
+def update_assumptions(body: AssumptionsUpdateBody):
+    asset_value_per_socket = body.asset_value_per_sites / body.avg_sockets_per_sites
+    updated = {
+        **ASSUMPTIONS,
+        "delivery_capacity_sockets_per_year": {
+            **ASSUMPTIONS.get("delivery_capacity_sockets_per_year", {}),
+            "senior_delivery_manager": body.senior_delivery_manager,
+            "delivery_manager": body.delivery_manager,
+        },
+        "installer_resource_per_site_per_week": body.installer_resource_per_site_per_week,
+        "avg_sockets_per_sites": body.avg_sockets_per_sites,
+        "asset_value_per_sites": body.asset_value_per_sites,
+        "value_per_socket": {
+            **ASSUMPTIONS.get("value_per_socket", {}),
+            "asset_value_per_socket": asset_value_per_socket,
+        },
+    }
+
+    try:
+        _ASSUMPTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_ASSUMPTIONS_PATH, "w", encoding="utf-8") as f:
+            json.dump(updated, f, indent=2)
+            f.write("\n")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not save assumptions: {exc}") from exc
+
+    ASSUMPTIONS.clear()
+    ASSUMPTIONS.update(updated)
+    return ASSUMPTIONS
+
+
 @app.post("/api/ai-assistant/chat")
 def chat_with_assistant(request: ChatRequest):
     for message in request.messages:
         if message.role not in {"user", "assistant"}:
             raise HTTPException(status_code=400, detail="Invalid chat message role")
-
     system_prompt = ChatMessage(
         role="system",
         content=(
@@ -286,56 +468,78 @@ def chat_with_assistant(request: ChatRequest):
     return {"message": ask_foundry([system_prompt, *request.messages])}
 
 
+# ─── Data ingestion ───────────────────────────────────────────────────────────
+
+@app.post("/api/data-ingestion/mpp", status_code=201)
+async def upload_mpp(file: UploadFile = File(...)):
+    import db as _db
+
+    filename = safe_upload_filename(file.filename)
+    if not filename:
+        raise HTTPException(status_code=400, detail="MPP file name is required")
+
+    if not filename.lower().endswith(".mpp"):
+        raise HTTPException(status_code=400, detail="Upload a Microsoft Project .mpp file")
+
+    work_package_name = Path(filename).stem.strip()
+    if not work_package_name:
+        raise HTTPException(status_code=400, detail="MPP file name must include a work package name")
+
+    if not _db.work_package_name_exists(work_package_name):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "MPP file name must match a Work Package in the uploaded plan rows. "
+                f"No Work Package matched '{work_package_name}'."
+            ),
+        )
+
+    content = await file.read()
+    blob_name = upload_mpp_for_conversion(filename, content)
+    return {"fileName": filename, "blobName": blob_name}
+
+
+# ─── Plans CRUD (metadata in SQL, Excel in blob) ──────────────────────────────
+
 @app.get("/api/plans")
 def list_plans():
-    container = get_container_client()
-    plans = []
-    seen: set[str] = set()
-
-    for blob in container.list_blobs():
-        if not blob.name.endswith("/metadata.json"):
-            continue
-        plan_id = blob.name.split("/")[0]
-        if plan_id in seen:
-            continue
-        seen.add(plan_id)
-        try:
-            client = container.get_blob_client(blob.name)
-            plans.append(json.loads(client.download_blob().readall()))
-        except Exception:
-            continue
-
-    plans.sort(key=lambda p: p.get("createdAt", ""), reverse=True)
-    return plans
+    import db as _db
+    return _db.list_plans()
 
 
 @app.post("/api/plans", status_code=201)
 async def create_plan(name: str = Form(...), file: UploadFile = File(...)):
+    import db as _db
     container = get_container_client()
     plan_id = str(uuid.uuid4())
     content = await file.read()
+    created_at = datetime.now(timezone.utc).isoformat()
 
-    container.get_blob_client(f"{plan_id}/{file.filename}").upload_blob(
-        content, overwrite=True
+    blob_path = upload_excel(container, plan_id, file.filename, content)
+
+    plan = _db.create_plan(
+        plan_id=plan_id,
+        plan_name=name,
+        blob_path=blob_path,
+        file_name=file.filename or "",
+        file_size=len(content),
+        file_type=file.content_type or "",
+        created_at=created_at,
     )
 
-    metadata = {
-        "id": plan_id,
-        "name": name,
-        "createdAt": datetime.now(timezone.utc).isoformat(),
-        "status": "active",
-        "fileName": file.filename,
-        "fileSize": len(content),
-        "fileType": file.content_type or "",
-    }
-    write_metadata(container, metadata)
-    write_metrics_cache(container, plan_id, compute_metrics(content))
-    return metadata
+    df = pd.read_excel(io.BytesIO(content), sheet_name="Sheet1")
+    _db.sync_rows(plan_id, df)
+
+    return plan
 
 
 @app.get("/api/plans/{plan_id}")
 def get_plan(plan_id: str):
-    return read_metadata(get_container_client(), plan_id)
+    import db as _db
+    plan = _db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    return plan
 
 
 @app.patch("/api/plans/{plan_id}")
@@ -345,119 +549,85 @@ async def update_plan(
     status: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
 ):
-    container = get_container_client()
-    metadata = read_metadata(container, plan_id)
+    import db as _db
+    plan = _db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
 
+    updates: dict = {}
     if name is not None:
-        metadata["name"] = name
+        updates["plan_name"] = name
     if status is not None:
-        metadata["status"] = status
+        updates["status"] = status
 
     if file is not None:
         content = await file.read()
-        # Remove old Excel file only (keep metadata.json and metrics.json)
-        for blob in container.list_blobs(name_starts_with=f"{plan_id}/"):
-            if not blob.name.endswith("metadata.json") and not blob.name.endswith("metrics.json"):
-                container.delete_blob(blob.name)
-        container.get_blob_client(f"{plan_id}/{file.filename}").upload_blob(
-            content, overwrite=True
-        )
-        metadata["fileName"] = file.filename
-        metadata["fileSize"] = len(content)
-        metadata["fileType"] = file.content_type or ""
-        write_metrics_cache(container, plan_id, compute_metrics(content))
+        container = get_container_client()
+        delete_plan_blobs(container, plan_id)
+        blob_path = upload_excel(container, plan_id, file.filename, content)
+        updates["blob_path"] = blob_path
+        updates["file_name"] = file.filename or ""
+        updates["file_size"] = len(content)
+        updates["file_type"] = file.content_type or ""
 
-    write_metadata(container, metadata)
-    return metadata
+        df = pd.read_excel(io.BytesIO(content), sheet_name="Sheet1")
+        _db.sync_rows(plan_id, df)
+
+    return _db.update_plan(plan_id, **updates)
 
 
 @app.delete("/api/plans/{plan_id}", status_code=204)
 def delete_plan(plan_id: str):
+    import db as _db
     container = get_container_client()
-    for blob in list(container.list_blobs(name_starts_with=f"{plan_id}/")):
-        container.delete_blob(blob.name)
+    delete_plan_blobs(container, plan_id)
+    _db.delete_plan(plan_id)
 
+
+# ─── Plan data endpoints ──────────────────────────────────────────────────────
 
 @app.get("/api/plans/{plan_id}/metrics")
 def get_plan_metrics(plan_id: str):
-    container = get_container_client()
-
-    # Cache-first: return pre-computed metrics.json if it has all expected fields
-    try:
-        cached = json.loads(
-            container.get_blob_client(f"{plan_id}/metrics.json").download_blob().readall()
-        )
-        if "workforce" in cached and "asset_value" in cached:
-            return cached
-    except Exception:
-        pass  # cache miss or stale schema — fall through to recompute
-
-    file_blob = next(
-        (
-            b
-            for b in container.list_blobs(name_starts_with=f"{plan_id}/")
-            if not b.name.endswith("metadata.json") and not b.name.endswith("metrics.json")
-        ),
-        None,
-    )
-    if not file_blob:
-        raise HTTPException(status_code=404, detail="Plan file not found")
-
-    content = container.get_blob_client(file_blob.name).download_blob().readall()
-    metrics = compute_metrics(content)
-    write_metrics_cache(container, plan_id, metrics)
-    return metrics
+    import db as _db
+    rows = _db.get_rows(plan_id)
+    return compute_metrics_from_rows(rows)
 
 
-@app.get("/api/plans/{plan_id}/data")
-def get_plan_data(plan_id: str):
-    container = get_container_client()
-    file_blob = next(
-        (
-            b
-            for b in container.list_blobs(name_starts_with=f"{plan_id}/")
-            if not b.name.endswith("metadata.json") and not b.name.endswith("metrics.json")
-        ),
-        None,
-    )
-    if not file_blob:
-        raise HTTPException(status_code=404, detail="Plan file not found")
+@app.get("/api/plans/{plan_id}/rows")
+def get_plan_rows(plan_id: str):
+    import db as _db
+    return _db.get_rows(plan_id)
 
-    content = container.get_blob_client(file_blob.name).download_blob().readall()
-    df = pd.read_excel(io.BytesIO(content), sheet_name="Sheet1")
 
-    str_cols = ["custom_region_name", "contract_name", "work_package_name"]
-    monthly_cols = (
-        [f"target_sockets_{i}" for i in range(1, 13)]
-        + [f"planned_sockets_{i}" for i in range(1, 13)]
-    )
-    # Ensure every monthly column exists even if absent in the sheet
-    for col in monthly_cols:
-        if col not in df.columns:
-            df[col] = 0
+@app.get("/api/plans/{plan_id}/capex-incurred")
+def get_plan_capex_incurred(plan_id: str):
+    import db as _db
+    rows = _db.get_rows(plan_id)
+    return compute_incurred_capex_from_rows(rows)
 
-    result = df[str_cols + monthly_cols].copy()
-    result[str_cols] = result[str_cols].fillna("").astype(str)
-    result[monthly_cols] = result[monthly_cols].fillna(0)
-    return result.to_dict(orient="records")
+
+@app.put("/api/plans/{plan_id}/rows/{row_id}", status_code=200)
+def update_plan_row(plan_id: str, row_id: int, body: RowUpdateBody):
+    import db as _db
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    _db.update_row(row_id, data)
+    return {"ok": True}
 
 
 @app.get("/api/plans/{plan_id}/file")
 def get_plan_file(plan_id: str):
+    import db as _db
+    plan = _db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
     container = get_container_client()
-    file_blob = next(
-        (
-            b
-            for b in container.list_blobs(name_starts_with=f"{plan_id}/")
-            if not b.name.endswith("metadata.json") and not b.name.endswith("metrics.json")
-        ),
-        None,
-    )
-    if not file_blob:
+    blob = get_excel_blob(container, plan_id)
+    if not blob:
         raise HTTPException(status_code=404, detail="File not found")
 
-    client = container.get_blob_client(file_blob.name)
-    filename = file_blob.name.split("/")[-1]
+    client = container.get_blob_client(blob.name)
+    filename = blob.name.split("/")[-1]
 
     def stream():
         yield from client.download_blob().chunks()
@@ -470,11 +640,29 @@ def get_plan_file(plan_id: str):
 
 
 # ─── Serve built React app in production ─────────────────────────────────────
-# `npm run build` outputs to ./dist; FastAPI serves it as static files.
-# In development, Vite's dev server handles the frontend (see vite.config.ts).
 
-if os.path.exists("dist"):
-    app.mount("/", StaticFiles(directory="dist", html=True), name="static")
+DIST_DIR = Path("dist")
+INDEX_FILE = DIST_DIR / "index.html"
+
+if DIST_DIR.exists():
+    assets_dir = DIST_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(INDEX_FILE)
+
+    @app.get("/{full_path:path}")
+    async def serve_react_app(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        static_file = (DIST_DIR / full_path).resolve()
+        if static_file.is_file() and DIST_DIR.resolve() in static_file.parents:
+            return FileResponse(static_file)
+
+        return FileResponse(INDEX_FILE)
 
 
 if __name__ == "__main__":

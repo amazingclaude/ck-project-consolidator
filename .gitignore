@@ -45,3 +45,6 @@ data/assumptions.json
 # Python bytecode
 __pycache__/
 *.pyc
+
+#Claude
+.claude/

@@ -1,5 +1,5 @@
 import { Zap, PoundSterling, Users, TrendingUp } from 'lucide-react'
-import type { PlanMetrics } from '../api/plansApi'
+import type { Assumptions, PlanMetrics } from '../api/plansApi'
 
 function formatNumber(n: number) {
   return n.toLocaleString('en-GB')
@@ -19,10 +19,13 @@ const CAPEX_SEGMENTS = [
 
 interface Props {
   metrics: PlanMetrics
+  assumptions: Assumptions
 }
 
-export default function MetricsSection({ metrics }: Props) {
-  const { targets_vs_planned: sockets, capex, workforce, asset_value } = metrics
+export default function MetricsSection({ metrics, assumptions }: Props) {
+  const { target_sockets, max_installer_resource_required, capex, workforce, asset_value } = metrics
+  const assetValuePerSocket = assumptions.value_per_socket.asset_value_per_socket
+  const avgSocketsPerSite = assumptions.avg_sockets_per_sites ?? 5
 
   const pct = (val: number) =>
     capex.total > 0 ? (val / capex.total) * 100 : 0
@@ -30,33 +33,40 @@ export default function MetricsSection({ metrics }: Props) {
   return (
     <div className="space-y-4 mb-8">
       {/* ── Row 1: Sockets + Capex ── */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Targets vs Planned */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
+      <div className="grid grid-cols-12 gap-4">
+        {/* Target Sockets */}
+        <div className="col-span-3 bg-white border border-gray-200 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-5">
             <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center shrink-0">
               <Zap size={15} className="text-emerald-600" />
             </div>
-            <h3 className="text-sm font-semibold text-gray-700">Targets vs Planned (Sockets)</h3>
+            <h3 className="text-sm font-semibold text-gray-700">Target Sockets</h3>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs text-gray-400 mb-1">Target Sockets</p>
-              <p className="text-3xl font-extrabold text-gray-900 tabular-nums">
-                {formatNumber(sockets.target_sockets)}
-              </p>
+          <p className="text-3xl font-extrabold text-gray-900 tabular-nums">
+            {formatNumber(target_sockets)}
+          </p>
+        </div>
+
+        {/* Max Installer Resource Required */}
+        <div className="col-span-4 bg-white border border-gray-200 rounded-xl p-6">
+          <div className="flex items-center gap-2 mb-5">
+            <div className="w-8 h-8 bg-cyan-100 rounded-lg flex items-center justify-center shrink-0">
+              <Users size={15} className="text-cyan-600" />
             </div>
-            <div>
-              <p className="text-xs text-gray-400 mb-1">Planned Sockets</p>
-              <p className="text-3xl font-extrabold text-emerald-600 tabular-nums">
-                {formatNumber(sockets.planned_sockets)}
-              </p>
-            </div>
+            <h3 className="text-sm font-semibold text-gray-700">
+              Max Installer Resource Required (per week)
+            </h3>
           </div>
+          <p className="text-3xl font-extrabold text-gray-900 tabular-nums">
+            {formatNumber(max_installer_resource_required)}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            Peak 30 sites/wk * 1.5 resource/site/wk
+          </p>
         </div>
 
         {/* Total Capex */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
+        <div className="col-span-5 bg-white border border-gray-200 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-5">
             <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
               <PoundSterling size={15} className="text-blue-600" />
@@ -99,7 +109,7 @@ export default function MetricsSection({ metrics }: Props) {
             <h3 className="text-sm font-semibold text-gray-700">Senior Delivery Managers</h3>
           </div>
           <p className="text-3xl font-extrabold text-gray-900 tabular-nums">
-            {workforce.senior_delivery_managers_required.toFixed(1)}
+            {formatNumber(workforce.senior_delivery_managers_required)}
           </p>
           <p className="text-xs text-gray-400 mt-1">Required</p>
         </div>
@@ -113,7 +123,7 @@ export default function MetricsSection({ metrics }: Props) {
             <h3 className="text-sm font-semibold text-gray-700">CK Delivery Managers</h3>
           </div>
           <p className="text-3xl font-extrabold text-gray-900 tabular-nums">
-            {workforce.delivery_managers_required.toFixed(1)}
+            {formatNumber(workforce.delivery_managers_required)}
           </p>
           <p className="text-xs text-gray-400 mt-1">Required</p>
         </div>
@@ -129,7 +139,9 @@ export default function MetricsSection({ metrics }: Props) {
           <p className="text-3xl font-extrabold text-gray-900 tabular-nums">
             {formatCurrency(asset_value)}
           </p>
-          <p className="text-xs text-gray-400 mt-1">Target sockets × £1,000</p>
+          <p className="text-xs text-gray-400 mt-1">
+            Target sites × £{formatNumber(assetValuePerSocket * avgSocketsPerSite)}
+          </p>
         </div>
       </div>
     </div>
@@ -139,9 +151,9 @@ export default function MetricsSection({ metrics }: Props) {
 export function MetricsSkeleton() {
   return (
     <div className="space-y-4 mb-8 animate-pulse">
-      <div className="grid grid-cols-2 gap-4">
-        {[0, 1].map(i => (
-          <div key={i} className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+      <div className="grid grid-cols-12 gap-4">
+        {['col-span-3', 'col-span-4', 'col-span-5'].map((spanClass, i) => (
+          <div key={i} className={`${spanClass} bg-white border border-gray-200 rounded-xl p-6 space-y-4`}>
             <div className="h-4 bg-gray-100 rounded w-2/3" />
             <div className="grid grid-cols-2 gap-4">
               <div className="h-10 bg-gray-100 rounded" />
