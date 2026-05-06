@@ -44,7 +44,11 @@ data/assumptions.json
 
 # Python bytecode
 __pycache__/
-*.pyc
+*.py[cod]
+$py.class
 
 #Claude
 .claude/
+
+#Client provided data
+data/client_provided_data/
