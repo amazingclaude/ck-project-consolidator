@@ -3,6 +3,11 @@ export interface MppUploadResult {
   blobName: string
 }
 
+export interface StageGatesUploadResult {
+  fileName: string
+  blobName: string
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => null)
@@ -17,5 +22,13 @@ export async function uploadMppFile(file: File): Promise<MppUploadResult> {
   form.append('file', file)
   return handleResponse<MppUploadResult>(
     await fetch('/api/data-ingestion/mpp', { method: 'POST', body: form }),
+  )
+}
+
+export async function uploadStageGatesFile(file: File): Promise<StageGatesUploadResult> {
+  const form = new FormData()
+  form.append('file', file)
+  return handleResponse<StageGatesUploadResult>(
+    await fetch('/api/data-ingestion/stage-gates', { method: 'POST', body: form }),
   )
 }
