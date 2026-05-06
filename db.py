@@ -251,6 +251,24 @@ def get_rows(plan_id: str) -> list[dict]:
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
+def work_package_name_exists(work_package_name: str) -> bool:
+    normalized_name = work_package_name.strip().lower()
+    if not normalized_name:
+        return False
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT TOP 1 1
+            FROM plan_rows
+            WHERE LOWER(LTRIM(RTRIM(COALESCE(work_package_name, '')))) = ?
+            """,
+            (normalized_name,),
+        )
+        return cur.fetchone() is not None
+
+
 def update_row(row_id: int, data: dict) -> None:
     parts, params = [], []
     for k, v in data.items():

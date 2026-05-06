@@ -35,6 +35,11 @@ if os.getenv("ENV") != "production":
 
 AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
 CONTAINER_NAME = os.getenv("AZURE_STORAGE_CONTAINER", "plans")
+MPP_CONVERTER_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING_MPP_CONVERTER", "")
+MPP_CONVERTER_INPUT_CONTAINER_NAME = os.getenv(
+    "AZURE_STORAGE_CONTAINER_MPP_CONVERTER_IN",
+    "mppinputnew",
+)
 AI_FOUNDRY_ENDPOINT = os.getenv("AI_FOUNDRY_ENDPOINT", "")
 AI_FOUNDRY_API_KEY = os.getenv("AI_FOUNDRY_API_KEY", "")
 AI_FOUNDRY_DEPLOYMENT = os.getenv("AI_FOUNDRY_DEPLOYMENT", "")
@@ -123,6 +128,31 @@ def delete_plan_blobs(container, plan_id: str) -> None:
 def get_excel_blob(container, plan_id: str):
     blobs = [b for b in container.list_blobs(name_starts_with=f"{plan_id}/")]
     return blobs[0] if blobs else None
+
+
+def get_mpp_converter_input_container_client():
+    if not MPP_CONVERTER_CONNECTION_STRING:
+        raise HTTPException(
+            status_code=500,
+            detail="AZURE_STORAGE_CONNECTION_STRING_MPP_CONVERTER is not configured",
+        )
+    service = BlobServiceClient.from_connection_string(MPP_CONVERTER_CONNECTION_STRING)
+    container = service.get_container_client(MPP_CONVERTER_INPUT_CONTAINER_NAME)
+    try:
+        container.create_container()
+    except Exception:
+        pass
+    return container
+
+
+def safe_upload_filename(filename: str | None) -> str:
+    return (filename or "").replace("\\", "/").split("/")[-1].strip()
+
+
+def upload_mpp_for_conversion(filename: str, content: bytes) -> str:
+    container = get_mpp_converter_input_container_client()
+    container.get_blob_client(filename).upload_blob(content, overwrite=True)
+    return filename
 
 
 # ─── Metrics calculation (from SQL rows + assumptions.json) ───────────────────
@@ -395,6 +425,37 @@ def chat_with_assistant(request: ChatRequest):
         ),
     )
     return {"message": ask_foundry([system_prompt, *request.messages])}
+
+
+# ─── Data ingestion ───────────────────────────────────────────────────────────
+
+@app.post("/api/data-ingestion/mpp", status_code=201)
+async def upload_mpp(file: UploadFile = File(...)):
+    import db as _db
+
+    filename = safe_upload_filename(file.filename)
+    if not filename:
+        raise HTTPException(status_code=400, detail="MPP file name is required")
+
+    if not filename.lower().endswith(".mpp"):
+        raise HTTPException(status_code=400, detail="Upload a Microsoft Project .mpp file")
+
+    work_package_name = Path(filename).stem.strip()
+    if not work_package_name:
+        raise HTTPException(status_code=400, detail="MPP file name must include a work package name")
+
+    if not _db.work_package_name_exists(work_package_name):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "MPP file name must match a Work Package in the uploaded plan rows. "
+                f"No Work Package matched '{work_package_name}'."
+            ),
+        )
+
+    content = await file.read()
+    blob_name = upload_mpp_for_conversion(filename, content)
+    return {"fileName": filename, "blobName": blob_name}
 
 
 # ─── Plans CRUD (metadata in SQL, Excel in blob) ──────────────────────────────
