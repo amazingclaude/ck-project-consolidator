@@ -209,7 +209,7 @@ def sync_rows(plan_id: str, df: pd.DataFrame) -> int:
                     target_sockets,
                     {socket_col_sql},
                     planned_gate_1, planned_gate_2, planned_gate_3, planned_gate_4,
-                    actual_gate_1,  actual_gate_2,  actual_gate_3,  actual_gate_4
+                    forecast_gate_1,  forecast_gate_2,  forecast_gate_3,  forecast_gate_4
                 ) VALUES ({placeholders})
                 """,
                 (
@@ -241,7 +241,7 @@ def get_rows(plan_id: str) -> list[dict]:
                    target_sockets,
                    {socket_col_sql},
                    planned_gate_1, planned_gate_2, planned_gate_3, planned_gate_4,
-                   actual_gate_1,  actual_gate_2,  actual_gate_3,  actual_gate_4
+                   forecast_gate_1,  forecast_gate_2,  forecast_gate_3,  forecast_gate_4
             FROM plan_rows WHERE plan_id = ?
             ORDER BY row_id
             """,
@@ -267,6 +267,59 @@ def work_package_name_exists(work_package_name: str) -> bool:
             (normalized_name,),
         )
         return cur.fetchone() is not None
+
+
+# ─── Stage Gate Plans ─────────────────────────────────────────────────────────
+
+_SG_GATE_COLS = [f"planned_gate_{i}" for i in range(1, 5)] + [f"actual_gate_{i}" for i in range(1, 5)]
+
+
+def create_stage_gate_plan(sg_plan_id: str, file_name: str, plan_year: int, created_at: str) -> dict:
+    with get_db() as conn:
+        conn.cursor().execute(
+            "INSERT INTO stage_gate_plans (sg_plan_id, file_name, plan_year, created_at) VALUES (?,?,?,?)",
+            (sg_plan_id, file_name, plan_year, created_at),
+        )
+    return {"id": sg_plan_id, "fileName": file_name, "planYear": plan_year, "createdAt": created_at}
+
+
+def sync_stage_gate_rows(sg_plan_id: str, df: pd.DataFrame) -> int:
+    df = df.copy()
+
+    if "work_package_name" not in df.columns:
+        df["work_package_name"] = ""
+    else:
+        df["work_package_name"] = df["work_package_name"].fillna("").astype(str)
+
+    for col in _SG_GATE_COLS:
+        if col not in df.columns:
+            df[col] = None
+        else:
+            weeks = pd.to_numeric(df[col], errors="coerce")
+            df[col] = [int(v) if pd.notna(v) else None for v in weeks]
+
+    def optional_int(value):
+        return int(value) if pd.notna(value) else None
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM stage_gate_rows WHERE sg_plan_id = ?", (sg_plan_id,))
+        for _, row in df.iterrows():
+            cur.execute(
+                """
+                INSERT INTO stage_gate_rows (
+                    sg_plan_id, work_package_name,
+                    planned_gate_1, planned_gate_2, planned_gate_3, planned_gate_4,
+                    forecast_gate_1,  forecast_gate_2,  forecast_gate_3,  forecast_gate_4
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    sg_plan_id,
+                    str(row["work_package_name"]),
+                    *[optional_int(row[col]) for col in _SG_GATE_COLS],
+                ),
+            )
+    return len(df)
 
 
 def update_row(row_id: int, data: dict) -> None:

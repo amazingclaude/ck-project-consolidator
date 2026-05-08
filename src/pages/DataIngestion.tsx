@@ -15,6 +15,8 @@ export default function DataIngestion() {
   // Stage Gates upload state
   const sgInputRef = useRef<HTMLInputElement>(null)
   const [sgFileName, setSgFileName] = useState('')
+  const [sgPlanYear, setSgPlanYear] = useState('')
+  const [sgRowCount, setSgRowCount] = useState<number | null>(null)
   const [sgError, setSgError] = useState('')
   const [sgIsUploading, setSgIsUploading] = useState(false)
   const [sgIsDragOver, setSgIsDragOver] = useState(false)
@@ -59,12 +61,18 @@ export default function DataIngestion() {
       setSgError('Please upload an Excel file (.xlsx or .xls).')
       return
     }
+    const year = parseInt(sgPlanYear, 10)
+    if (!sgPlanYear || isNaN(year) || year < 2000 || year > 2100) {
+      setSgError('Enter a valid Stage Gate Plan Year before uploading.')
+      return
+    }
     setSgError('')
     setSgFileName('')
     setSgIsUploading(true)
     try {
-      const result = await uploadStageGatesFile(file)
+      const result = await uploadStageGatesFile(file, year)
       setSgFileName(result.fileName)
+      setSgRowCount(result.rowCount)
     } catch (err) {
       setSgError(err instanceof Error ? err.message : 'Failed to upload Stage Gates file.')
     } finally {
@@ -173,6 +181,22 @@ export default function DataIngestion() {
           </div>
         </div>
 
+        <div className="mb-5">
+          <label htmlFor="sg-plan-year" className="block text-sm font-medium text-gray-700 mb-1">
+            Stage Gate Plan Year <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="sg-plan-year"
+            type="number"
+            min={2000}
+            max={2100}
+            placeholder="e.g. 2026"
+            value={sgPlanYear}
+            onChange={(e) => setSgPlanYear(e.target.value)}
+            className="w-40 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+
         <div
           onDragOver={(event) => { event.preventDefault(); setSgIsDragOver(true) }}
           onDragLeave={() => setSgIsDragOver(false)}
@@ -218,7 +242,9 @@ export default function DataIngestion() {
           <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 flex items-center gap-3 text-sm text-blue-800">
             <CheckCircle2 size={18} className="shrink-0" />
             <span className="font-medium">{sgFileName}</span>
-            <span className="text-blue-700">uploaded successfully</span>
+            <span className="text-blue-700">
+              uploaded successfully — {sgRowCount} work package{sgRowCount === 1 ? '' : 's'} stored
+            </span>
           </div>
         )}
       </section>

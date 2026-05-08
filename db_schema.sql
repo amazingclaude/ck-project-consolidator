@@ -51,12 +51,41 @@ CREATE TABLE plan_rows (
     planned_gate_2                INT           NULL,
     planned_gate_3                INT           NULL,
     planned_gate_4                INT           NULL,
-    actual_gate_1                 INT           NULL,
-    actual_gate_2                 INT           NULL,
-    actual_gate_3                 INT           NULL,
-    actual_gate_4                 INT           NULL,
+    forecast_gate_1                 INT           NULL,
+    forecast_gate_2                 INT           NULL,
+    forecast_gate_3                 INT           NULL,
+    forecast_gate_4                 INT           NULL,
     CONSTRAINT fk_plan_rows_plan
         FOREIGN KEY (plan_id) REFERENCES plans(plan_id) ON DELETE CASCADE
 );
 
 CREATE INDEX ix_plan_rows_plan_id ON plan_rows (plan_id);
+
+
+-- ── Stage Gate Plans (independent of business planning) ──────────────────────
+-- One row per uploaded Stage Gates Excel file.
+CREATE TABLE stage_gate_plans (
+    sg_plan_id  NVARCHAR(36)  NOT NULL PRIMARY KEY,
+    file_name   NVARCHAR(255) NOT NULL,
+    plan_year   INT           NOT NULL,
+    created_at  DATETIME2     NOT NULL DEFAULT GETUTCDATE()
+);
+
+-- One row per work package per stage gate plan.
+CREATE TABLE stage_gate_rows (
+    row_id             INT           NOT NULL IDENTITY(1,1) PRIMARY KEY,
+    sg_plan_id         NVARCHAR(36)  NOT NULL,
+    work_package_name  NVARCHAR(255) NULL,
+    planned_gate_1     INT           NULL,
+    planned_gate_2     INT           NULL,
+    planned_gate_3     INT           NULL,
+    planned_gate_4     INT           NULL,
+    forecast_gate_1      INT           NULL,
+    forecast_gate_2      INT           NULL,
+    forecast_gate_3      INT           NULL,
+    forecast_gate_4      INT           NULL,
+    CONSTRAINT fk_stage_gate_rows_plan
+        FOREIGN KEY (sg_plan_id) REFERENCES stage_gate_plans(sg_plan_id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_stage_gate_rows_sg_plan_id ON stage_gate_rows (sg_plan_id);

@@ -5,7 +5,9 @@ export interface MppUploadResult {
 
 export interface StageGatesUploadResult {
   fileName: string
-  blobName: string
+  planYear: number
+  rowCount: number
+  sgPlanId: string
 }
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -25,9 +27,10 @@ export async function uploadMppFile(file: File): Promise<MppUploadResult> {
   )
 }
 
-export async function uploadStageGatesFile(file: File): Promise<StageGatesUploadResult> {
+export async function uploadStageGatesFile(file: File, planYear: number): Promise<StageGatesUploadResult> {
   const form = new FormData()
   form.append('file', file)
+  form.append('plan_year', String(planYear))
   return handleResponse<StageGatesUploadResult>(
     await fetch('/api/data-ingestion/stage-gates', { method: 'POST', body: form }),
   )

@@ -101,10 +101,10 @@ class RowUpdateBody(BaseModel):
     planned_gate_2: Optional[int] = None
     planned_gate_3: Optional[int] = None
     planned_gate_4: Optional[int] = None
-    actual_gate_1: Optional[int] = None
-    actual_gate_2: Optional[int] = None
-    actual_gate_3: Optional[int] = None
-    actual_gate_4: Optional[int] = None
+    forecast_gate_1: Optional[int] = None
+    forecast_gate_2: Optional[int] = None
+    forecast_gate_3: Optional[int] = None
+    forecast_gate_4: Optional[int] = None
 
 
 class AssumptionsUpdateBody(BaseModel):
@@ -574,6 +574,94 @@ def chat_with_assistant(request: ChatRequest):
 
 
 # ─── Data ingestion ───────────────────────────────────────────────────────────
+
+def _transform_stage_gates(df: pd.DataFrame) -> pd.DataFrame:
+    """Transpose week-columns into planned/actual gate columns.
+
+    Input: raw Sheet1 DataFrame with a 'Work Package' column and integer week
+    columns (1–52) whose cells contain stage gate numbers 1–4.
+    Output: one row per work package with planned_gate_1..4 (week numbers) and
+    forecast_gate_1..4 (looked up per-row from the same week columns).
+    """
+    week_columns = [col for col in df.columns if isinstance(col, (int, float)) and not pd.isna(col)]
+    week_columns = [int(c) for c in week_columns]
+
+    # Build a lookup: work_package_name -> original row Series for actual gate lookup
+    original_rows: dict = {}
+    transformed_data = []
+
+    for _, row in df.iterrows():
+        work_package = row.get("Work Package", "")
+        original_rows[work_package] = row
+        stage_gate_dict: dict = {"work_package_name": work_package}
+
+        for week in week_columns:
+            val = row.get(week)
+            if val in [1, 2, 3, 4]:
+                key = f"planned_gate_{int(val)}"
+                if key not in stage_gate_dict:
+                    stage_gate_dict[key] = week
+        transformed_data.append(stage_gate_dict)
+
+    df_transformed = pd.DataFrame(transformed_data)
+
+    column_order = ["work_package_name", "planned_gate_1", "planned_gate_2", "planned_gate_3", "planned_gate_4"]
+    df_transformed = df_transformed[[col for col in column_order if col in df_transformed.columns]]
+
+    for gate_num in range(1, 5):
+        planned_col = f"planned_gate_{gate_num}"
+        actual_col = f"actual_gate_{gate_num}"
+
+        def _lookup_actual(row_t, pc=planned_col, orig=original_rows, wc=week_columns):
+            week = row_t.get(pc)
+            if pd.isna(week) if isinstance(week, float) else week is None:
+                return None
+            week = int(week)
+            orig_row = orig.get(row_t["work_package_name"])
+            if orig_row is None or week not in wc:
+                return None
+            v = orig_row.get(week)
+            return int(v) if pd.notna(v) else None
+
+        df_transformed[actual_col] = df_transformed.apply(_lookup_actual, axis=1)
+
+    return df_transformed
+
+
+@app.post("/api/data-ingestion/stage-gates", status_code=201)
+async def upload_stage_gates(
+    plan_year: int = Form(...),
+    file: UploadFile = File(...),
+):
+    import db as _db
+
+    filename = safe_upload_filename(file.filename)
+    if not filename:
+        raise HTTPException(status_code=400, detail="File name is required")
+
+    name_lower = filename.lower()
+    if not name_lower.endswith(".xlsx") and not name_lower.endswith(".xls"):
+        raise HTTPException(status_code=400, detail="Upload an Excel file (.xlsx or .xls)")
+
+    content = await file.read()
+    try:
+        df = pd.read_excel(io.BytesIO(content), sheet_name="Sheet1")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read Sheet1: {exc}") from exc
+
+    if "Work Package" not in df.columns:
+        raise HTTPException(status_code=400, detail="Sheet1 must contain a 'Work Package' column")
+
+    df_transformed = _transform_stage_gates(df)
+
+    sg_plan_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    _db.create_stage_gate_plan(sg_plan_id, filename, plan_year, created_at)
+    row_count = _db.sync_stage_gate_rows(sg_plan_id, df_transformed)
+
+    return {"fileName": filename, "planYear": plan_year, "rowCount": row_count, "sgPlanId": sg_plan_id}
+
 
 @app.post("/api/data-ingestion/mpp", status_code=201)
 async def upload_mpp(file: UploadFile = File(...)):
