@@ -1,10 +1,10 @@
 {
   "value_per_socket": {
-    "capex_bom_per_socket": 0,
-    "capex_installation_per_socket": 0,
-    "capex_connection_per_socket": 0,
-    "capex_total_per_socket": 0,
-    "asset_value_per_socket": 0
+    "capex_bom_per_socket": 1000,
+    "capex_installation_per_socket": 1000,
+    "capex_connection_per_socket": 1000,
+    "capex_total_per_socket": 5000,
+    "asset_value_per_socket": 1000
   },
   "delivery_capacity_sockets_per_year": {
     "senior_delivery_manager": 0,
@@ -12,13 +12,14 @@
   },
   
   "notes": {
-    "capex_bom_per_socket": "",
-    "capex_installation_per_socket": "",
-    "capex_connection_per_socket": "",
-    "asset_value_per_socket": "",
-    "senior_delivery_manager": "",
-    "delivery_manager": ""
+    "capex_bom_per_socket": "xxx",
+    "capex_installation_per_socket": "xxx",
+    "capex_connection_per_socket": "xxx",
+    "asset_value_per_socket": "xxx",
+    "senior_delivery_manager": "xxx",
+    "delivery_manager": "xxx"
   },
+  "installer_resource_per_site_per_week": 1.5,
   "payment_schedule": [
     {
       "cost_type": "connection",
@@ -76,5 +77,7 @@
       "offset_days": -80,
       "payment_pct": 0.4
     }
-  ]
+  ],
+  "avg_sockets_per_sites": 4.0,
+  "asset_value_per_sites": 4000.0
 }
