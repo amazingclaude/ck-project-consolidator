@@ -1,19 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Boxes, Gauge, Loader2, TriangleAlert } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AlertCircle, Boxes, CheckCircle, Gauge, Loader2, RefreshCw, TriangleAlert } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
-import { fetchPlanRows } from '../api/plansApi'
-import type { PlanRow } from '../api/plansApi'
-import { usePlans } from '../context/PlansContext'
+import { fetchStageGateRows } from '../api/portfolioApi'
+import type { StageGateRow } from '../api/portfolioApi'
+import { syncForecastGatesFromMpp } from '../api/dataIngestionApi'
 
 const GATES = [1, 2, 3, 4] as const
 
 type GateNumber = (typeof GATES)[number]
 type HealthStatus = 'healthy' | 'warning' | 'critical'
-
-interface PortfolioRow extends PlanRow {
-  plan_id: string
-  plan_name: string
-}
 
 interface GateHealth {
   gate: GateNumber
@@ -29,20 +24,25 @@ const HEALTH_CONFIG: Record<HealthStatus, { label: string; color: string; text: 
   critical: { label: 'Critical', color: '#ef4444', text: 'text-red-600' },
 }
 
+const YEAR_OPTIONS = Array.from({ length: 7 }, (_, i) => 2023 + i)
+
 function isPresent(value: unknown) {
   return value !== null && value !== undefined && value !== ''
 }
 
-function getGateValue(row: PlanRow, type: 'planned' | 'actual', gate: GateNumber) {
-  return row[`${type}_gate_${gate}` as keyof PlanRow] as number | null
+function getPlanned(row: StageGateRow, gate: GateNumber) {
+  return row[`planned_gate_${gate}` as keyof StageGateRow] as number | null
 }
 
-function getDelayWeeks(row: PlanRow, gate: GateNumber) {
-  const planned = getGateValue(row, 'planned', gate)
-  const actual = getGateValue(row, 'actual', gate)
+function getForecast(row: StageGateRow, gate: GateNumber) {
+  return row[`forecast_gate_${gate}` as keyof StageGateRow] as number | null
+}
 
-  if (!isPresent(planned) || !isPresent(actual)) return null
-  return Number(actual) - Number(planned)
+function getDelayWeeks(row: StageGateRow, gate: GateNumber) {
+  const planned = getPlanned(row, gate)
+  const forecast = getForecast(row, gate)
+  if (!isPresent(planned) || !isPresent(forecast)) return null
+  return Number(forecast) - Number(planned)
 }
 
 function getHealthStatus(delayWeeks: number): HealthStatus {
@@ -133,66 +133,51 @@ function GateRing({ health }: { health: GateHealth }) {
 }
 
 export default function PortfolioOverview() {
-  const { plans, loading: plansLoading, error: plansError } = usePlans()
-  const [rows, setRows] = useState<PortfolioRow[]>([])
-  const [rowsLoading, setRowsLoading] = useState(false)
-  const [rowsError, setRowsError] = useState<string | null>(null)
+  const [planYear, setPlanYear] = useState(new Date().getFullYear())
+  const [rows, setRows] = useState<StageGateRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ message: string; updatedRows: number } | null>(null)
 
-  const activePlans = useMemo(
-    () => plans.filter(plan => plan.status === 'active'),
-    [plans],
-  )
+  const loadRows = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await fetchStageGateRows(planYear)
+      setRows(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load portfolio rows')
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }, [planYear])
 
   useEffect(() => {
-    if (plansLoading) return
-    if (activePlans.length === 0) {
-      setRows([])
-      return
+    setSyncResult(null)
+    loadRows()
+  }, [loadRows])
+
+  async function handleSyncMpp() {
+    setSyncing(true)
+    setSyncResult(null)
+    setError(null)
+    try {
+      const result = await syncForecastGatesFromMpp(planYear)
+      setSyncResult(result)
+      await loadRows()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'MPP sync failed')
+    } finally {
+      setSyncing(false)
     }
-
-    let cancelled = false
-    setRowsLoading(true)
-    setRowsError(null)
-
-    Promise.all(
-      activePlans.map(plan =>
-        fetchPlanRows(plan.id).then(planRows =>
-          planRows.map(row => ({
-            ...row,
-            plan_id: plan.id,
-            plan_name: plan.name,
-          })),
-        ),
-      ),
-    )
-      .then(results => {
-        if (!cancelled) setRows(results.flat())
-      })
-      .catch(error => {
-        if (!cancelled) {
-          setRowsError(error instanceof Error ? error.message : 'Failed to load portfolio rows')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setRowsLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [activePlans, plansLoading])
+  }
 
   const workPackageRows = useMemo(
     () => rows.filter(row => isPresent(row.work_package_name)),
     [rows],
   )
-
-  const uniqueWorkPackages = useMemo(() => {
-    const keys = new Set(
-      workPackageRows.map(row => `${row.plan_id}::${row.work_package_name}`),
-    )
-    return keys.size
-  }, [workPackageRows])
 
   const missedGateCount = useMemo(
     () =>
@@ -211,36 +196,56 @@ export default function PortfolioOverview() {
   const gateHealth = useMemo<GateHealth[]>(
     () =>
       GATES.map(gate => {
-        const health: GateHealth = {
-          gate,
-          healthy: 0,
-          warning: 0,
-          critical: 0,
-          total: 0,
-        }
-
+        const health: GateHealth = { gate, healthy: 0, warning: 0, critical: 0, total: 0 }
         workPackageRows.forEach(row => {
           const delayWeeks = getDelayWeeks(row, gate)
           if (delayWeeks === null) return
           health[getHealthStatus(delayWeeks)] += 1
           health.total += 1
         })
-
         return health
       }),
     [workPackageRows],
   )
 
-  const isLoading = plansLoading || rowsLoading
-  const error = plansError || rowsError
-
   return (
     <div className="px-8 py-8 min-h-full">
-      <div className="mb-8">
-        <h1 className="text-3xl font-extrabold text-gray-900">Portfolio Overview</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          2026 work package stage gate performance across active plans
-        </p>
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold text-gray-900">Portfolio Overview</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Stage gate health by planning year, sourced from the uploaded stage gate plan.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label htmlFor="plan-year-select" className="text-sm font-medium text-gray-600 whitespace-nowrap">
+              Planning year
+            </label>
+            <select
+              id="plan-year-select"
+              value={planYear}
+              onChange={e => setPlanYear(Number(e.target.value))}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {YEAR_OPTIONS.map(year => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={handleSyncMpp}
+            disabled={syncing || loading}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Syncing…' : 'Refresh forecast gates from MPP'}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -250,10 +255,17 @@ export default function PortfolioOverview() {
         </div>
       )}
 
-      {isLoading ? (
+      {syncResult && (
+        <div className="flex items-center gap-2 mb-6 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">
+          <CheckCircle size={16} className="shrink-0" />
+          {syncResult.message}
+        </div>
+      )}
+
+      {loading ? (
         <div className="flex items-center justify-center py-24 gap-3 text-gray-400">
           <Loader2 size={22} className="animate-spin" />
-          <span className="text-sm">Loading portfolio dashboard...</span>
+          <span className="text-sm">Loading portfolio dashboard…</span>
         </div>
       ) : (
         <>
@@ -262,7 +274,7 @@ export default function PortfolioOverview() {
               className="col-span-12 md:col-span-6 2xl:col-span-3"
               icon={<Boxes size={16} className="text-emerald-600" />}
               label="Number of Work Packages"
-              value={uniqueWorkPackages.toLocaleString('en-GB')}
+              value={workPackageRows.length.toLocaleString('en-GB')}
             />
 
             <MetricCard
@@ -294,7 +306,7 @@ export default function PortfolioOverview() {
 
             {workPackageRows.length === 0 ? (
               <div className="py-14 text-center text-sm text-gray-400">
-                No work package gate data found in active plans.
+                No stage gate data found for {planYear}. Upload a stage gate Excel file to get started.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -303,9 +315,6 @@ export default function PortfolioOverview() {
                     <tr>
                       <th className="px-4 py-3 text-left font-semibold text-gray-500 whitespace-nowrap">
                         Work Package
-                      </th>
-                      <th className="px-4 py-3 text-left font-semibold text-gray-500 whitespace-nowrap">
-                        Plan Name
                       </th>
                       {GATES.map(gate => (
                         <th
@@ -317,37 +326,52 @@ export default function PortfolioOverview() {
                       ))}
                       {GATES.map(gate => (
                         <th
-                          key={`actual-${gate}`}
+                          key={`forecast-${gate}`}
                           className="px-4 py-3 text-left font-semibold text-gray-500 whitespace-nowrap"
                         >
-                          Actual Gate {gate}
+                          Forecast Gate {gate}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {workPackageRows.map(row => (
-                      <tr key={`${row.plan_id}-${row.row_id}`} className="hover:bg-gray-50">
+                      <tr key={row.row_id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-gray-900 font-medium min-w-56">
                           {row.work_package_name}
                         </td>
-                        <td className="px-4 py-3 text-gray-600 min-w-44">{row.plan_name}</td>
                         {GATES.map(gate => (
                           <td
-                            key={`planned-${row.plan_id}-${row.row_id}-${gate}`}
+                            key={`planned-${row.row_id}-${gate}`}
                             className="px-4 py-3 text-gray-600 tabular-nums whitespace-nowrap"
                           >
-                            {formatGate(getGateValue(row, 'planned', gate))}
+                            {formatGate(getPlanned(row, gate))}
                           </td>
                         ))}
-                        {GATES.map(gate => (
-                          <td
-                            key={`actual-${row.plan_id}-${row.row_id}-${gate}`}
-                            className="px-4 py-3 text-gray-600 tabular-nums whitespace-nowrap"
-                          >
-                            {formatGate(getGateValue(row, 'actual', gate))}
-                          </td>
-                        ))}
+                        {GATES.map(gate => {
+                          const forecast = getForecast(row, gate)
+                          const planned = getPlanned(row, gate)
+                          const delay =
+                            isPresent(planned) && isPresent(forecast)
+                              ? Number(forecast) - Number(planned)
+                              : null
+                          const statusClass =
+                            delay === null
+                              ? 'text-gray-600'
+                              : delay > 2
+                                ? 'text-red-600 font-semibold'
+                                : delay > 1
+                                  ? 'text-amber-600 font-semibold'
+                                  : 'text-emerald-600'
+                          return (
+                            <td
+                              key={`forecast-${row.row_id}-${gate}`}
+                              className={`px-4 py-3 tabular-nums whitespace-nowrap ${statusClass}`}
+                            >
+                              {formatGate(forecast)}
+                            </td>
+                          )
+                        })}
                       </tr>
                     ))}
                   </tbody>

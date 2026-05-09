@@ -322,6 +322,89 @@ def sync_stage_gate_rows(sg_plan_id: str, df: pd.DataFrame) -> int:
     return len(df)
 
 
+# ─── Stage Gate rows – year-scoped queries and MPP sync ──────────────────────
+
+def get_latest_sg_plan_id(plan_year: int) -> Optional[str]:
+    """Return the sg_plan_id of the most recently uploaded plan for plan_year."""
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT TOP 1 sg_plan_id FROM stage_gate_plans WHERE plan_year = ? ORDER BY created_at DESC",
+            (plan_year,),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
+def get_stage_gate_rows_by_year(plan_year: int) -> list[dict]:
+    """Return stage gate rows for the most recent plan of the given year."""
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT r.row_id, r.work_package_name,
+                   r.planned_gate_1, r.planned_gate_2, r.planned_gate_3, r.planned_gate_4,
+                   r.forecast_gate_1, r.forecast_gate_2, r.forecast_gate_3, r.forecast_gate_4,
+                   p.sg_plan_id, p.plan_year
+            FROM stage_gate_rows r
+            INNER JOIN stage_gate_plans p ON r.sg_plan_id = p.sg_plan_id
+            WHERE p.sg_plan_id = (
+                SELECT TOP 1 sg_plan_id FROM stage_gate_plans
+                WHERE plan_year = ?
+                ORDER BY created_at DESC
+            )
+            ORDER BY r.row_id
+            """,
+            (plan_year,),
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _safe_optional_int(value) -> Optional[int]:
+    try:
+        if value is None or pd.isna(value):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def update_stage_gate_forecast_gates(sg_plan_id: str, gate_updates: list[dict]) -> int:
+    """Batch-update forecast_gate_* columns in stage_gate_rows.
+
+    Matches rows by sg_plan_id and work_package_name (case-insensitive).
+    Returns the total number of SQL rows updated.
+    """
+    forecast_cols = [f"forecast_gate_{i}" for i in range(1, 5)]
+    updated = 0
+    with get_db() as conn:
+        cur = conn.cursor()
+        for update in gate_updates:
+            wp_name = str(update.get("work_package_name", "")).strip()
+            if not wp_name:
+                continue
+            parts, params = [], []
+            for col in forecast_cols:
+                if col in update:
+                    parts.append(f"{col} = ?")
+                    params.append(_safe_optional_int(update[col]))
+            if not parts:
+                continue
+            params.extend([sg_plan_id, wp_name.lower()])
+            cur.execute(
+                f"""
+                UPDATE stage_gate_rows
+                SET {', '.join(parts)}
+                WHERE sg_plan_id = ?
+                  AND LOWER(LTRIM(RTRIM(COALESCE(work_package_name, '')))) = ?
+                """,
+                params,
+            )
+            updated += cur.rowcount
+    return updated
+
+
 def update_row(row_id: int, data: dict) -> None:
     parts, params = [], []
     for k, v in data.items():

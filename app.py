@@ -41,6 +41,10 @@ MPP_CONVERTER_INPUT_CONTAINER_NAME = os.getenv(
     "AZURE_STORAGE_CONTAINER_MPP_CONVERTER_IN",
     "mppinputnew",
 )
+MPP_CONVERTER_OUTPUT_CONTAINER_NAME = os.getenv(
+    "AZURE_STORAGE_CONTAINER_MPP_CONVERTER_OUT",
+    "mppoutput",
+)
 AI_FOUNDRY_ENDPOINT = os.getenv("AI_FOUNDRY_ENDPOINT", "")
 AI_FOUNDRY_API_KEY = os.getenv("AI_FOUNDRY_API_KEY", "")
 AI_FOUNDRY_DEPLOYMENT = os.getenv("AI_FOUNDRY_DEPLOYMENT", "")
@@ -107,6 +111,10 @@ class RowUpdateBody(BaseModel):
     forecast_gate_4: Optional[int] = None
 
 
+class SyncMppRequest(BaseModel):
+    plan_year: int
+
+
 class AssumptionsUpdateBody(BaseModel):
     senior_delivery_manager: float = Field(gt=0)
     delivery_manager: float = Field(gt=0)
@@ -161,6 +169,16 @@ def get_mpp_converter_input_container_client():
     except Exception:
         pass
     return container
+
+
+def get_mpp_converter_output_container_client():
+    if not MPP_CONVERTER_CONNECTION_STRING:
+        raise HTTPException(
+            status_code=500,
+            detail="AZURE_STORAGE_CONNECTION_STRING_MPP_CONVERTER is not configured",
+        )
+    service = BlobServiceClient.from_connection_string(MPP_CONVERTER_CONNECTION_STRING)
+    return service.get_container_client(MPP_CONVERTER_OUTPUT_CONTAINER_NAME)
 
 
 def safe_upload_filename(filename: str | None) -> str:
@@ -575,6 +593,72 @@ def chat_with_assistant(request: ChatRequest):
 
 # ─── Data ingestion ───────────────────────────────────────────────────────────
 
+_MPP_GATE_PATTERN = r"\b(\d+)\.\s*Gate\s+(\d+)\b"
+_MPP_REQUIRED_COLS = ["TaskName", "StartDate", "FinishDate", "WeekOfYear"]
+
+
+def _build_forecast_gate_summary(plan_year: int) -> pd.DataFrame:
+    """Read converted MPP CSV files from Blob Storage and return a forecast gate
+    summary DataFrame for the given plan_year.
+
+    Mirrors the methodology in notebook/mpp_converter.ipynb:
+    1. List all CSV blobs in the MPP output container.
+    2. For each CSV, extract rows whose TaskName matches "N. Gate M".
+    3. Filter by FinishDate year == plan_year.
+    4. Pivot to work_package_name × forecast_gate_1..4 (WeekOfYear values).
+    """
+    container = get_mpp_converter_output_container_client()
+    csv_blob_names = [b.name for b in container.list_blobs() if b.name.lower().endswith(".csv")]
+
+    if not csv_blob_names:
+        return pd.DataFrame()
+
+    gate_rows: list[pd.DataFrame] = []
+    for blob_name in csv_blob_names:
+        content = container.get_blob_client(blob_name).download_blob().readall()
+        try:
+            df = pd.read_csv(io.BytesIO(content))
+        except Exception:
+            continue
+
+        if any(c not in df.columns for c in _MPP_REQUIRED_COLS):
+            continue
+
+        mask = df["TaskName"].astype(str).str.contains(_MPP_GATE_PATTERN, na=False, regex=True)
+        filtered = df[mask].copy()
+        if filtered.empty:
+            continue
+
+        extracted = filtered["TaskName"].str.extract(_MPP_GATE_PATTERN)
+        filtered["GateNumber"] = extracted[1].astype("Int64")
+        filtered["WorkPackage"] = Path(blob_name).stem
+        gate_rows.append(filtered[["WorkPackage", "GateNumber", "StartDate", "FinishDate", "WeekOfYear"]])
+
+    if not gate_rows:
+        return pd.DataFrame()
+
+    all_gates = pd.concat(gate_rows, ignore_index=True)
+    all_gates["FinishDate"] = pd.to_datetime(all_gates["FinishDate"], errors="coerce")
+    all_gates = all_gates[all_gates["FinishDate"].dt.year == plan_year]
+
+    if all_gates.empty:
+        return pd.DataFrame()
+
+    all_gates["GateCol"] = "forecast_gate_" + all_gates["GateNumber"].astype(str)
+    gate_summary = (
+        all_gates.pivot_table(
+            index="WorkPackage",
+            columns="GateCol",
+            values="WeekOfYear",
+            aggfunc="first",
+        )
+        .reset_index()
+    )
+    gate_summary.columns.name = None
+    gate_summary = gate_summary.rename(columns={"WorkPackage": "work_package_name"})
+    return gate_summary
+
+
 def _transform_stage_gates(df: pd.DataFrame) -> pd.DataFrame:
     """Transpose week-columns into planned/actual gate columns.
 
@@ -690,6 +774,66 @@ async def upload_mpp(file: UploadFile = File(...)):
     content = await file.read()
     blob_name = upload_mpp_for_conversion(filename, content)
     return {"fileName": filename, "blobName": blob_name}
+
+
+# ─── Stage gate rows & MPP sync ──────────────────────────────────────────────
+
+@app.get("/api/stage-gates/rows")
+def get_stage_gate_rows_endpoint(plan_year: int):
+    import db as _db
+    return _db.get_stage_gate_rows_by_year(plan_year)
+
+
+@app.post("/api/stage-gates/sync-mpp")
+def sync_mpp_forecast_gates(body: SyncMppRequest):
+    import db as _db
+
+    sg_plan_id = _db.get_latest_sg_plan_id(body.plan_year)
+    if not sg_plan_id:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No stage gate plan found for year {body.plan_year}. "
+                "Upload a stage gate Excel file first."
+            ),
+        )
+
+    try:
+        gate_summary = _build_forecast_gate_summary(body.plan_year)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read MPP CSV files from blob storage: {exc}",
+        ) from exc
+
+    if gate_summary.empty:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No MPP gate data found for year {body.plan_year}. "
+                "Ensure the MPP file has been converted by the Azure Function."
+            ),
+        )
+
+    forecast_cols = [c for c in [f"forecast_gate_{i}" for i in range(1, 5)] if c in gate_summary.columns]
+    updates = gate_summary[["work_package_name"] + forecast_cols].to_dict(orient="records")
+    updated_count = _db.update_stage_gate_forecast_gates(sg_plan_id, updates)
+
+    if updated_count == 0:
+        return {
+            "updatedRows": 0,
+            "message": (
+                "No matching work packages found in stage gate rows. "
+                "Check that work package names match between the Excel file and MPP files."
+            ),
+        }
+
+    return {
+        "updatedRows": updated_count,
+        "message": f"Successfully updated forecast gates for {updated_count} work package(s).",
+    }
 
 
 # ─── Plans CRUD (metadata in SQL, Excel in blob) ──────────────────────────────

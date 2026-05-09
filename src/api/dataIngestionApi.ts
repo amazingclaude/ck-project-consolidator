@@ -3,6 +3,11 @@ export interface MppUploadResult {
   blobName: string
 }
 
+export interface SyncMppResult {
+  updatedRows: number
+  message: string
+}
+
 export interface StageGatesUploadResult {
   fileName: string
   planYear: number
@@ -33,5 +38,15 @@ export async function uploadStageGatesFile(file: File, planYear: number): Promis
   form.append('plan_year', String(planYear))
   return handleResponse<StageGatesUploadResult>(
     await fetch('/api/data-ingestion/stage-gates', { method: 'POST', body: form }),
+  )
+}
+
+export async function syncForecastGatesFromMpp(planYear: number): Promise<SyncMppResult> {
+  return handleResponse<SyncMppResult>(
+    await fetch('/api/stage-gates/sync-mpp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan_year: planYear }),
+    }),
   )
 }
