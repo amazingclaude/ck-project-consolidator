@@ -115,6 +115,17 @@ class SyncMppRequest(BaseModel):
     plan_year: int
 
 
+class StageGateRowUpdateBody(BaseModel):
+    planned_gate_1: Optional[int] = None
+    planned_gate_2: Optional[int] = None
+    planned_gate_3: Optional[int] = None
+    planned_gate_4: Optional[int] = None
+    forecast_gate_1: Optional[int] = None
+    forecast_gate_2: Optional[int] = None
+    forecast_gate_3: Optional[int] = None
+    forecast_gate_4: Optional[int] = None
+
+
 class AssumptionsUpdateBody(BaseModel):
     senior_delivery_manager: float = Field(gt=0)
     delivery_manager: float = Field(gt=0)
@@ -789,6 +800,14 @@ async def upload_mpp(files: list[UploadFile] = File(...)):
 def get_stage_gate_rows_endpoint(plan_year: int):
     import db as _db
     return _db.get_stage_gate_rows_by_year(plan_year)
+
+
+@app.put("/api/stage-gates/rows/{row_id}", status_code=200)
+def update_stage_gate_row_endpoint(row_id: int, body: StageGateRowUpdateBody):
+    import db as _db
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    _db.update_stage_gate_row(row_id, data)
+    return {"ok": True}
 
 
 @app.post("/api/stage-gates/sync-mpp")

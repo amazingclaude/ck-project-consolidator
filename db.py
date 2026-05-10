@@ -405,6 +405,27 @@ def update_stage_gate_forecast_gates(sg_plan_id: str, gate_updates: list[dict]) 
     return updated
 
 
+_STAGE_GATE_EDITABLE_COLS = frozenset([
+    "planned_gate_1", "planned_gate_2", "planned_gate_3", "planned_gate_4",
+    "forecast_gate_1", "forecast_gate_2", "forecast_gate_3", "forecast_gate_4",
+])
+
+
+def update_stage_gate_row(row_id: int, data: dict) -> None:
+    parts, params = [], []
+    for k, v in data.items():
+        if k in _STAGE_GATE_EDITABLE_COLS:
+            parts.append(f"{k} = ?")
+            params.append(v)
+    if not parts:
+        return
+    params.append(row_id)
+    with get_db() as conn:
+        conn.cursor().execute(
+            f"UPDATE stage_gate_rows SET {', '.join(parts)} WHERE row_id = ?", params
+        )
+
+
 def update_row(row_id: int, data: dict) -> None:
     parts, params = [], []
     for k, v in data.items():

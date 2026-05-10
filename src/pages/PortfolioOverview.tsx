@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Boxes, CheckCircle, Gauge, Loader2, RefreshCw, TriangleAlert } from 'lucide-react'
+import { AlertCircle, Boxes, CheckCircle, Gauge, Loader2, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
-import { fetchStageGateRows } from '../api/portfolioApi'
+import { fetchStageGateRows, updateStageGateRow } from '../api/portfolioApi'
 import type { StageGateRow } from '../api/portfolioApi'
 import { syncForecastGatesFromMpp } from '../api/dataIngestionApi'
 
@@ -139,6 +139,14 @@ export default function PortfolioOverview() {
   const [error, setError] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<{ message: string; updatedRows: number } | null>(null)
+  const [syncConfirmPending, setSyncConfirmPending] = useState(false)
+
+  // Edit mode state
+  const [editMode, setEditMode] = useState(false)
+  const [localRows, setLocalRows] = useState<StageGateRow[]>([])
+  const [dirtyRowIds, setDirtyRowIds] = useState<Set<number>>(new Set())
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const loadRows = useCallback(async () => {
     setLoading(true)
@@ -156,10 +164,66 @@ export default function PortfolioOverview() {
 
   useEffect(() => {
     setSyncResult(null)
+    setEditMode(false)
     loadRows()
   }, [loadRows])
 
+  function enterEditMode() {
+    setLocalRows(rows.map(r => ({ ...r })))
+    setDirtyRowIds(new Set())
+    setSaveError(null)
+    setEditMode(true)
+  }
+
+  function cancelEdit() {
+    setEditMode(false)
+    setLocalRows([])
+    setDirtyRowIds(new Set())
+    setSaveError(null)
+  }
+
+  function updateCell(rowId: number, field: keyof StageGateRow, raw: string) {
+    const value = raw === '' ? null : Number(raw)
+    setLocalRows(prev =>
+      prev.map(r => (r.row_id === rowId ? { ...r, [field]: value } : r)),
+    )
+    setDirtyRowIds(prev => new Set(prev).add(rowId))
+    setSaveError(null)
+  }
+
+  async function handleSave() {
+    if (dirtyRowIds.size === 0) { setEditMode(false); return }
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await Promise.all(
+        localRows
+          .filter(r => dirtyRowIds.has(r.row_id))
+          .map(r =>
+            updateStageGateRow(r.row_id, {
+              planned_gate_1: r.planned_gate_1 ?? undefined,
+              planned_gate_2: r.planned_gate_2 ?? undefined,
+              planned_gate_3: r.planned_gate_3 ?? undefined,
+              planned_gate_4: r.planned_gate_4 ?? undefined,
+              forecast_gate_1: r.forecast_gate_1 ?? undefined,
+              forecast_gate_2: r.forecast_gate_2 ?? undefined,
+              forecast_gate_3: r.forecast_gate_3 ?? undefined,
+              forecast_gate_4: r.forecast_gate_4 ?? undefined,
+            }),
+          ),
+      )
+      setEditMode(false)
+      setDirtyRowIds(new Set())
+      await loadRows()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save changes')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleSyncMpp() {
+    setSyncConfirmPending(false)
     setSyncing(true)
     setSyncResult(null)
     setError(null)
@@ -174,9 +238,10 @@ export default function PortfolioOverview() {
     }
   }
 
+  const displayRows = editMode ? localRows : rows
   const workPackageRows = useMemo(
-    () => rows.filter(row => isPresent(row.work_package_name)),
-    [rows],
+    () => displayRows.filter(row => isPresent(row.work_package_name)),
+    [displayRows],
   )
 
   const missedGateCount = useMemo(
@@ -227,7 +292,8 @@ export default function PortfolioOverview() {
               id="plan-year-select"
               value={planYear}
               onChange={e => setPlanYear(Number(e.target.value))}
-              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              disabled={editMode}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
             >
               {YEAR_OPTIONS.map(year => (
                 <option key={year} value={year}>
@@ -237,14 +303,33 @@ export default function PortfolioOverview() {
             </select>
           </div>
 
-          <button
-            onClick={handleSyncMpp}
-            disabled={syncing || loading}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Syncing…' : 'Refresh forecast gates from MPP'}
-          </button>
+          {syncConfirmPending ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-800">
+              <TriangleAlert size={14} className="shrink-0" />
+              <span>This will overwrite manually-edited forecast gates.</span>
+              <button
+                onClick={handleSyncMpp}
+                className="ml-1 font-semibold text-amber-900 hover:underline"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => setSyncConfirmPending(false)}
+                className="font-semibold text-amber-700 hover:underline"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setSyncConfirmPending(true)}
+              disabled={syncing || loading || editMode}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Syncing…' : 'Refresh forecast gates from MPP'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -300,8 +385,42 @@ export default function PortfolioOverview() {
           </div>
 
           <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
               <h2 className="text-base font-bold text-gray-900">Project Health Overview</h2>
+              {workPackageRows.length > 0 && (
+                editMode ? (
+                  <div className="flex items-center gap-2">
+                    {saveError && (
+                      <span className="text-xs text-red-600">{saveError}</span>
+                    )}
+                    <button
+                      onClick={cancelEdit}
+                      disabled={saving}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                    >
+                      <X size={14} />
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                    >
+                      {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={enterEditMode}
+                    disabled={loading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                  >
+                    <Pencil size={14} />
+                    Modify
+                  </button>
+                )
+              )}
             </div>
 
             {workPackageRows.length === 0 ? (
@@ -335,45 +454,77 @@ export default function PortfolioOverview() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
-                    {workPackageRows.map(row => (
-                      <tr key={row.row_id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-gray-900 font-medium min-w-56">
-                          {row.work_package_name}
-                        </td>
-                        {GATES.map(gate => (
-                          <td
-                            key={`planned-${row.row_id}-${gate}`}
-                            className="px-4 py-3 text-gray-600 tabular-nums whitespace-nowrap"
-                          >
-                            {formatGate(getPlanned(row, gate))}
+                    {workPackageRows.map(row => {
+                      const isDirty = dirtyRowIds.has(row.row_id)
+                      return (
+                        <tr key={row.row_id} className={`hover:bg-gray-50 ${isDirty ? 'bg-blue-50/40' : ''}`}>
+                          <td className="px-4 py-3 text-gray-900 font-medium min-w-56">
+                            <span className="flex items-center gap-1.5">
+                              {row.work_package_name}
+                              {isDirty && (
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" title="Unsaved changes" />
+                              )}
+                            </span>
                           </td>
-                        ))}
-                        {GATES.map(gate => {
-                          const forecast = getForecast(row, gate)
-                          const planned = getPlanned(row, gate)
-                          const delay =
-                            isPresent(planned) && isPresent(forecast)
-                              ? Number(forecast) - Number(planned)
-                              : null
-                          const statusClass =
-                            delay === null
-                              ? 'text-gray-600'
-                              : delay > 2
-                                ? 'text-red-600 font-semibold'
-                                : delay > 1
-                                  ? 'text-amber-600 font-semibold'
-                                  : 'text-emerald-600'
-                          return (
-                            <td
-                              key={`forecast-${row.row_id}-${gate}`}
-                              className={`px-4 py-3 tabular-nums whitespace-nowrap ${statusClass}`}
-                            >
-                              {formatGate(forecast)}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
+                          {GATES.map(gate => {
+                            const field = `planned_gate_${gate}` as keyof StageGateRow
+                            const value = row[field] as number | null
+                            return (
+                              <td key={`planned-${row.row_id}-${gate}`} className="px-4 py-2 text-gray-600 tabular-nums whitespace-nowrap">
+                                {editMode ? (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={value ?? ''}
+                                    onChange={e => updateCell(row.row_id, field, e.target.value)}
+                                    placeholder="-"
+                                    className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 tabular-nums"
+                                  />
+                                ) : (
+                                  formatGate(value)
+                                )}
+                              </td>
+                            )
+                          })}
+                          {GATES.map(gate => {
+                            const field = `forecast_gate_${gate}` as keyof StageGateRow
+                            const forecast = row[field] as number | null
+                            const planned = getPlanned(row, gate)
+                            const delay =
+                              isPresent(planned) && isPresent(forecast)
+                                ? Number(forecast) - Number(planned)
+                                : null
+                            const statusClass =
+                              editMode || delay === null
+                                ? 'text-gray-600'
+                                : delay > 2
+                                  ? 'text-red-600 font-semibold'
+                                  : delay > 1
+                                    ? 'text-amber-600 font-semibold'
+                                    : 'text-emerald-600'
+                            return (
+                              <td
+                                key={`forecast-${row.row_id}-${gate}`}
+                                className={`px-4 py-2 tabular-nums whitespace-nowrap ${statusClass}`}
+                              >
+                                {editMode ? (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={forecast ?? ''}
+                                    onChange={e => updateCell(row.row_id, field, e.target.value)}
+                                    placeholder="-"
+                                    className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 tabular-nums text-gray-600 font-normal"
+                                  />
+                                ) : (
+                                  formatGate(forecast)
+                                )}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -27,3 +27,22 @@ export async function fetchStageGateRows(planYear: number): Promise<StageGateRow
     await fetch(`/api/stage-gates/rows?plan_year=${planYear}`),
   )
 }
+
+type GateFields = Pick<
+  StageGateRow,
+  | 'planned_gate_1' | 'planned_gate_2' | 'planned_gate_3' | 'planned_gate_4'
+  | 'forecast_gate_1' | 'forecast_gate_2' | 'forecast_gate_3' | 'forecast_gate_4'
+>
+
+export async function updateStageGateRow(
+  rowId: number,
+  data: Partial<GateFields>,
+): Promise<void> {
+  return handleResponse<void>(
+    await fetch(`/api/stage-gates/rows/${rowId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  )
+}
