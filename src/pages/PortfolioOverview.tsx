@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Boxes, CheckCircle, Gauge, Loader2, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
+import { Activity, AlertCircle, Boxes, CheckCircle, Gauge, Loader2, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import { fetchStageGateRows, updateStageGateRow } from '../api/portfolioApi'
 import type { StageGateRow } from '../api/portfolioApi'
@@ -55,6 +55,19 @@ function formatGate(value: number | null) {
   return isPresent(value) ? `W${Number(value)}` : '-'
 }
 
+function getWorkPackageDeviationCount(row: StageGateRow): number {
+  return GATES.reduce((count, gate) => {
+    const delay = getDelayWeeks(row, gate)
+    return count + (delay !== null && delay > 0 ? 1 : 0)
+  }, 0)
+}
+
+function getWorkPackageHealth(deviationCount: number): HealthStatus {
+  if (deviationCount === 0) return 'healthy'
+  if (deviationCount === 1) return 'warning'
+  return 'critical'
+}
+
 function MetricCard({
   children,
   className = '',
@@ -66,7 +79,7 @@ function MetricCard({
   className?: string
   icon: React.ReactNode
   label: string
-  value: string
+  value?: string
 }) {
   return (
     <div className={`bg-white border border-gray-200 rounded-xl p-5 min-w-0 ${className}`}>
@@ -76,7 +89,9 @@ function MetricCard({
         </div>
         <h2 className="text-sm font-semibold text-gray-700">{label}</h2>
       </div>
-      <p className="text-3xl font-extrabold text-gray-900 tabular-nums">{value}</p>
+      {value !== undefined && (
+        <p className="text-3xl font-extrabold text-gray-900 tabular-nums">{value}</p>
+      )}
       {children}
     </div>
   )
@@ -273,6 +288,14 @@ export default function PortfolioOverview() {
     [workPackageRows],
   )
 
+  const wpHealthCounts = useMemo(() => {
+    const counts = { healthy: 0, warning: 0, critical: 0 }
+    workPackageRows.forEach(row => {
+      counts[getWorkPackageHealth(getWorkPackageDeviationCount(row))] += 1
+    })
+    return counts
+  }, [workPackageRows])
+
   return (
     <div className="px-8 py-8 min-h-full">
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
@@ -355,21 +378,40 @@ export default function PortfolioOverview() {
       ) : (
         <>
           <div className="grid grid-cols-12 gap-4 mb-8">
+            {/* Row 1: three summary metric cards */}
             <MetricCard
-              className="col-span-12 md:col-span-6 2xl:col-span-3"
+              className="col-span-12 md:col-span-4"
               icon={<Boxes size={16} className="text-emerald-600" />}
               label="Number of Work Packages"
               value={workPackageRows.length.toLocaleString('en-GB')}
             />
 
             <MetricCard
-              className="col-span-12 md:col-span-6 2xl:col-span-3"
+              className="col-span-12 md:col-span-4"
               icon={<TriangleAlert size={16} className="text-amber-600" />}
               label="Stage Gate Deviations"
               value={missedGateCount.toLocaleString('en-GB')}
             />
 
-            <div className="col-span-12 2xl:col-span-6 bg-white border border-gray-200 rounded-xl p-5">
+            <MetricCard
+              className="col-span-12 md:col-span-4"
+              icon={<Activity size={16} className="text-purple-600" />}
+              label="Work Package Health Status"
+            >
+              <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                {(Object.keys(HEALTH_CONFIG) as HealthStatus[]).map(status => (
+                  <div key={status}>
+                    <p className={`text-2xl font-extrabold tabular-nums ${HEALTH_CONFIG[status].text}`}>
+                      {wpHealthCounts[status]}
+                    </p>
+                    <p className="text-[11px] text-gray-400 truncate">{HEALTH_CONFIG[status].label}</p>
+                  </div>
+                ))}
+              </div>
+            </MetricCard>
+
+            {/* Row 2: gate health donut charts */}
+            <div className="col-span-12 bg-white border border-gray-200 rounded-xl p-5">
               <div className="flex items-center gap-2 mb-5">
                 <div className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center shrink-0">
                   <Gauge size={16} className="text-cyan-600" />
@@ -435,6 +477,12 @@ export default function PortfolioOverview() {
                       <th className="px-4 py-3 text-left font-semibold text-gray-500 whitespace-nowrap">
                         Work Package
                       </th>
+                      <th className="px-4 py-3 text-left font-semibold text-gray-500 whitespace-nowrap">
+                        Gate Deviations
+                      </th>
+                      <th className="px-4 py-3 text-left font-semibold text-gray-500 whitespace-nowrap">
+                        Health
+                      </th>
                       {GATES.map(gate => (
                         <th
                           key={`planned-${gate}`}
@@ -456,6 +504,8 @@ export default function PortfolioOverview() {
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {workPackageRows.map(row => {
                       const isDirty = dirtyRowIds.has(row.row_id)
+                      const deviationCount = getWorkPackageDeviationCount(row)
+                      const wpHealth = getWorkPackageHealth(deviationCount)
                       return (
                         <tr key={row.row_id} className={`hover:bg-gray-50 ${isDirty ? 'bg-blue-50/40' : ''}`}>
                           <td className="px-4 py-3 text-gray-900 font-medium min-w-56">
@@ -464,6 +514,20 @@ export default function PortfolioOverview() {
                               {isDirty && (
                                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" title="Unsaved changes" />
                               )}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 tabular-nums text-gray-700 font-medium">
+                            {deviationCount}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              wpHealth === 'healthy'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : wpHealth === 'warning'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-red-100 text-red-700'
+                            }`}>
+                              {HEALTH_CONFIG[wpHealth].label}
                             </span>
                           </td>
                           {GATES.map(gate => {
