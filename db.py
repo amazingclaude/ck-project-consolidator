@@ -261,7 +261,7 @@ def work_package_name_exists(work_package_name: str) -> bool:
         cur.execute(
             """
             SELECT TOP 1 1
-            FROM plan_rows
+            FROM stage_gate_rows
             WHERE LOWER(LTRIM(RTRIM(COALESCE(work_package_name, '')))) = ?
             """,
             (normalized_name,),

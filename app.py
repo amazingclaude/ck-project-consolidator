@@ -758,8 +758,8 @@ async def upload_mpp(file: UploadFile = File(...)):
         raise HTTPException(
             status_code=400,
             detail=(
-                "MPP file name must match a Work Package in the uploaded plan rows. "
-                f"No Work Package matched '{work_package_name}'."
+                "MPP file name must match a work_package_name in the stage gate rows. "
+                f"No work package matched '{work_package_name}'."
             ),
         )
 
