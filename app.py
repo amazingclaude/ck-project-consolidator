@@ -660,24 +660,21 @@ def _build_forecast_gate_summary(plan_year: int) -> pd.DataFrame:
 
 
 def _transform_stage_gates(df: pd.DataFrame) -> pd.DataFrame:
-    """Transpose week-columns into planned/actual gate columns.
+    """Transpose week-columns into planned gate columns.
 
     Input: raw Sheet1 DataFrame with a 'Work Package' column and integer week
     columns (1–52) whose cells contain stage gate numbers 1–4.
-    Output: one row per work package with planned_gate_1..4 (week numbers) and
-    forecast_gate_1..4 (looked up per-row from the same week columns).
+    Output: one row per work package with planned_gate_1..4 and
+    forecast_gate_1..4 (all NULL placeholders).
     """
     week_columns = [col for col in df.columns if isinstance(col, (int, float)) and not pd.isna(col)]
     week_columns = [int(c) for c in week_columns]
 
-    # Build a lookup: work_package_name -> original row Series for actual gate lookup
-    original_rows: dict = {}
     transformed_data = []
 
     for _, row in df.iterrows():
         work_package = row.get("Work Package", "")
-        original_rows[work_package] = row
-        stage_gate_dict: dict = {"work_package_name": work_package}
+        stage_gate_dict = {"work_package_name": work_package}
 
         for week in week_columns:
             val = row.get(week)
@@ -685,29 +682,24 @@ def _transform_stage_gates(df: pd.DataFrame) -> pd.DataFrame:
                 key = f"planned_gate_{int(val)}"
                 if key not in stage_gate_dict:
                     stage_gate_dict[key] = week
+
         transformed_data.append(stage_gate_dict)
 
     df_transformed = pd.DataFrame(transformed_data)
 
-    column_order = ["work_package_name", "planned_gate_1", "planned_gate_2", "planned_gate_3", "planned_gate_4"]
-    df_transformed = df_transformed[[col for col in column_order if col in df_transformed.columns]]
+    # Keep planned columns in order
+    planned_cols = [
+        "work_package_name",
+        "planned_gate_1",
+        "planned_gate_2",
+        "planned_gate_3",
+        "planned_gate_4",
+    ]
+    df_transformed = df_transformed[[c for c in planned_cols if c in df_transformed.columns]]
 
-    for gate_num in range(1, 5):
-        planned_col = f"planned_gate_{gate_num}"
-        actual_col = f"forecast_gate_{gate_num}"
-
-        def _lookup_actual(row_t, pc=planned_col, orig=original_rows, wc=week_columns):
-            week = row_t.get(pc)
-            if pd.isna(week) if isinstance(week, float) else week is None:
-                return None
-            week = int(week)
-            orig_row = orig.get(row_t["work_package_name"])
-            if orig_row is None or week not in wc:
-                return None
-            v = orig_row.get(week)
-            return int(v) if pd.notna(v) else None
-
-        df_transformed[actual_col] = df_transformed.apply(_lookup_actual, axis=1)
+    # Append forecast gate columns with SQL-friendly NULL values
+    for i in range(1, 5):
+        df_transformed[f"forecast_gate_{i}"] = None
 
     return df_transformed
 
