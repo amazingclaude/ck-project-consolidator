@@ -22,7 +22,7 @@ AZURE_SQL_CONNECTION_STRING: str = os.getenv("AZURE_SQL_CONNECTION_STRING", "")
 
 _SOCKET_COLS = [f"target_sockets_{i}" for i in range(1, 19)]
 _GATE_COLS = [f"planned_gate_{i}" for i in range(1, 5)] + [
-    f"actual_gate_{i}" for i in range(1, 5)
+    f"forecast_gate_{i}" for i in range(1, 5)
 ]
 _CAPEX_COLS = [
     "capex_bom_per_socket",
@@ -271,7 +271,7 @@ def work_package_name_exists(work_package_name: str) -> bool:
 
 # ─── Stage Gate Plans ─────────────────────────────────────────────────────────
 
-_SG_GATE_COLS = [f"planned_gate_{i}" for i in range(1, 5)] + [f"actual_gate_{i}" for i in range(1, 5)]
+_SG_GATE_COLS = [f"planned_gate_{i}" for i in range(1, 5)] + [f"forecast_gate_{i}" for i in range(1, 5)]
 
 
 def create_stage_gate_plan(sg_plan_id: str, file_name: str, plan_year: int, created_at: str) -> dict:

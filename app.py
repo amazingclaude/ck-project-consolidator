@@ -694,7 +694,7 @@ def _transform_stage_gates(df: pd.DataFrame) -> pd.DataFrame:
 
     for gate_num in range(1, 5):
         planned_col = f"planned_gate_{gate_num}"
-        actual_col = f"actual_gate_{gate_num}"
+        actual_col = f"forecast_gate_{gate_num}"
 
         def _lookup_actual(row_t, pc=planned_col, orig=original_rows, wc=week_columns):
             week = row_t.get(pc)
