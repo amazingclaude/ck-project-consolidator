@@ -740,32 +740,47 @@ async def upload_stage_gates(
 
 
 @app.post("/api/data-ingestion/mpp", status_code=201)
-async def upload_mpp(file: UploadFile = File(...)):
+async def upload_mpp(files: list[UploadFile] = File(...)):
     import db as _db
 
-    filename = safe_upload_filename(file.filename)
-    if not filename:
-        raise HTTPException(status_code=400, detail="MPP file name is required")
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one MPP file is required")
 
-    if not filename.lower().endswith(".mpp"):
-        raise HTTPException(status_code=400, detail="Upload a Microsoft Project .mpp file")
+    # Validate every file before uploading any
+    validation_errors: list[str] = []
+    validated: list[tuple[str, UploadFile]] = []
+    for f in files:
+        filename = safe_upload_filename(f.filename)
+        if not filename:
+            validation_errors.append("(unnamed): file name is required")
+            continue
+        if not filename.lower().endswith(".mpp"):
+            validation_errors.append(f"'{filename}': not a .mpp file")
+            continue
+        work_package_name = Path(filename).stem.strip()
+        if not work_package_name:
+            validation_errors.append(f"'{filename}': file name must include a work package name")
+            continue
+        if not _db.work_package_name_exists(work_package_name):
+            validation_errors.append(
+                f"'{filename}': no work package matched '{work_package_name}' in stage gate rows"
+            )
+            continue
+        validated.append((filename, f))
 
-    work_package_name = Path(filename).stem.strip()
-    if not work_package_name:
-        raise HTTPException(status_code=400, detail="MPP file name must include a work package name")
-
-    if not _db.work_package_name_exists(work_package_name):
+    if validation_errors:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "MPP file name must match a work_package_name in the stage gate rows. "
-                f"No work package matched '{work_package_name}'."
-            ),
+            detail="Upload rejected — the following files failed validation: " + "; ".join(validation_errors),
         )
 
-    content = await file.read()
-    blob_name = upload_mpp_for_conversion(filename, content)
-    return {"fileName": filename, "blobName": blob_name}
+    results = []
+    for filename, f in validated:
+        content = await f.read()
+        blob_name = upload_mpp_for_conversion(filename, content)
+        results.append({"fileName": filename, "blobName": blob_name})
+
+    return results
 
 
 # ─── Stage gate rows & MPP sync ──────────────────────────────────────────────

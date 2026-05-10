@@ -1,14 +1,14 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { ArrowLeft, CheckCircle2, FileSpreadsheet, Loader2, UploadCloud } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { uploadMppFile, uploadStageGatesFile } from '../api/dataIngestionApi'
+import { uploadMppFiles, uploadStageGatesFile, type MppUploadResult } from '../api/dataIngestionApi'
 
 export default function DataIngestion() {
   const navigate = useNavigate()
 
   // MPP upload state
   const inputRef = useRef<HTMLInputElement>(null)
-  const [fileName, setFileName] = useState('')
+  const [uploadedFiles, setUploadedFiles] = useState<MppUploadResult[]>([])
   const [error, setError] = useState('')
   const [isUploading, setIsUploading] = useState(false)
 
@@ -21,23 +21,23 @@ export default function DataIngestion() {
   const [sgIsUploading, setSgIsUploading] = useState(false)
   const [sgIsDragOver, setSgIsDragOver] = useState(false)
 
-  const setMppFile = async (file?: File) => {
-    if (!file) return
+  const uploadMpp = async (files: File[]) => {
+    if (files.length === 0) return
 
-    if (!file.name.toLowerCase().endsWith('.mpp')) {
-      setFileName('')
-      setError('Upload a Microsoft Project .mpp file.')
+    const nonMpp = files.filter(f => !f.name.toLowerCase().endsWith('.mpp'))
+    if (nonMpp.length > 0) {
+      setError(`Only .mpp files are allowed: ${nonMpp.map(f => f.name).join(', ')}`)
       return
     }
 
     setError('')
-    setFileName('')
+    setUploadedFiles([])
     setIsUploading(true)
     try {
-      const result = await uploadMppFile(file)
-      setFileName(result.fileName)
+      const results = await uploadMppFiles(files)
+      setUploadedFiles(results)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload MPP file.')
+      setError(err instanceof Error ? err.message : 'Failed to upload MPP files.')
     } finally {
       setIsUploading(false)
       if (inputRef.current) inputRef.current.value = ''
@@ -45,12 +45,12 @@ export default function DataIngestion() {
   }
 
   const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
-    void setMppFile(event.target.files?.[0])
+    void uploadMpp(Array.from(event.target.files ?? []))
   }
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault()
-    void setMppFile(event.dataTransfer.files[0])
+    void uploadMpp(Array.from(event.dataTransfer.files))
   }
 
   const setStageGatesFile = async (file?: File) => {
@@ -118,7 +118,7 @@ export default function DataIngestion() {
           <div>
             <h2 className="text-lg font-bold text-gray-900">Microsoft Project upload</h2>
             <p className="mt-1 text-sm text-gray-500 leading-relaxed">
-              Upload Microsoft MPP files whose names match a Work Package in the plan rows.
+              Upload one or more MPP files whose names each match a Work Package in the stage gate rows. All files are validated before any upload proceeds.
             </p>
           </div>
         </div>
@@ -131,23 +131,24 @@ export default function DataIngestion() {
           <span className="w-14 h-14 rounded-xl bg-white border border-gray-200 text-emerald-600 flex items-center justify-center mb-4">
             <UploadCloud size={26} />
           </span>
-          <h3 className="text-base font-bold text-gray-900">Drop an .mpp file here</h3>
+          <h3 className="text-base font-bold text-gray-900">Drop .mpp files here</h3>
           <p className="mt-2 text-sm text-gray-500 max-w-md">
-            Select or drag a Microsoft Project MPP file. The file name must match a Work Package.
+            Select or drag one or more Microsoft Project MPP files. Each file name must match a Work Package in the stage gate rows.
           </p>
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
             disabled={isUploading}
-            className="mt-5 inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors"
+            className="mt-5 inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors"
           >
             {isUploading ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
-            {isUploading ? 'Uploading...' : 'Choose MPP file'}
+            {isUploading ? 'Uploading...' : 'Choose MPP files'}
           </button>
           <input
             ref={inputRef}
             type="file"
             accept=".mpp,application/vnd.ms-project"
+            multiple
             onChange={handleInputChange}
             className="hidden"
           />
@@ -159,11 +160,15 @@ export default function DataIngestion() {
           </div>
         )}
 
-        {fileName && (
-          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center gap-3 text-sm text-emerald-800">
-            <CheckCircle2 size={18} className="shrink-0" />
-            <span className="font-medium">{fileName}</span>
-            <span className="text-emerald-700">uploaded for conversion</span>
+        {uploadedFiles.length > 0 && (
+          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 space-y-1">
+            {uploadedFiles.map(f => (
+              <div key={f.blobName} className="flex items-center gap-3">
+                <CheckCircle2 size={18} className="shrink-0" />
+                <span className="font-medium">{f.fileName}</span>
+                <span className="text-emerald-700">uploaded for conversion</span>
+              </div>
+            ))}
           </div>
         )}
       </section>

@@ -24,10 +24,12 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function uploadMppFile(file: File): Promise<MppUploadResult> {
+export async function uploadMppFiles(files: File[]): Promise<MppUploadResult[]> {
   const form = new FormData()
-  form.append('file', file)
-  return handleResponse<MppUploadResult>(
+  for (const file of files) {
+    form.append('files', file)
+  }
+  return handleResponse<MppUploadResult[]>(
     await fetch('/api/data-ingestion/mpp', { method: 'POST', body: form }),
   )
 }
