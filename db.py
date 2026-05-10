@@ -207,9 +207,7 @@ def sync_rows(plan_id: str, df: pd.DataFrame) -> int:
                     capex_bom_per_socket, capex_installation_per_socket,
                     capex_connection_per_socket, total_capex_per_socket,
                     target_sockets,
-                    {socket_col_sql},
-                    planned_gate_1, planned_gate_2, planned_gate_3, planned_gate_4,
-                    forecast_gate_1,  forecast_gate_2,  forecast_gate_3,  forecast_gate_4
+                    {socket_col_sql}
                 ) VALUES ({placeholders})
                 """,
                 (
@@ -239,9 +237,7 @@ def get_rows(plan_id: str) -> list[dict]:
                    capex_bom_per_socket, capex_installation_per_socket,
                    capex_connection_per_socket, total_capex_per_socket,
                    target_sockets,
-                   {socket_col_sql},
-                   planned_gate_1, planned_gate_2, planned_gate_3, planned_gate_4,
-                   forecast_gate_1,  forecast_gate_2,  forecast_gate_3,  forecast_gate_4
+                   {socket_col_sql}
             FROM plan_rows WHERE plan_id = ?
             ORDER BY row_id
             """,
