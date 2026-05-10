@@ -60,7 +60,8 @@ CREATE TABLE stage_gate_plans (
     sg_plan_id  NVARCHAR(36)  NOT NULL PRIMARY KEY,
     file_name   NVARCHAR(255) NOT NULL,
     plan_year   INT           NOT NULL,
-    created_at  DATETIME2     NOT NULL DEFAULT GETUTCDATE()
+    created_at  DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+    CONSTRAINT uq_stage_gate_plans_year UNIQUE (plan_year)
 );
 
 -- One row per work package per stage gate plan.

@@ -744,6 +744,7 @@ async def upload_stage_gates(
     sg_plan_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
 
+    _db.delete_stage_gate_plan_by_year(plan_year)
     _db.create_stage_gate_plan(sg_plan_id, filename, plan_year, created_at)
     row_count = _db.sync_stage_gate_rows(sg_plan_id, df_transformed)
 

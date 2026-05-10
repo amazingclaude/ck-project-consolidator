@@ -270,6 +270,15 @@ def work_package_name_exists(work_package_name: str) -> bool:
 _SG_GATE_COLS = [f"planned_gate_{i}" for i in range(1, 5)] + [f"forecast_gate_{i}" for i in range(1, 5)]
 
 
+def delete_stage_gate_plan_by_year(plan_year: int) -> None:
+    """Delete the existing plan for plan_year (cascades to stage_gate_rows)."""
+    with get_db() as conn:
+        conn.cursor().execute(
+            "DELETE FROM stage_gate_plans WHERE plan_year = ?",
+            (plan_year,),
+        )
+
+
 def create_stage_gate_plan(sg_plan_id: str, file_name: str, plan_year: int, created_at: str) -> dict:
     with get_db() as conn:
         conn.cursor().execute(
