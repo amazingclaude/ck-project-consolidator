@@ -717,13 +717,13 @@ def _transform_stage_gates(df: pd.DataFrame) -> pd.DataFrame:
 
 @app.get("/api/data-ingestion/stage-gates/template")
 def download_stage_gates_template():
-    template_path = Path("data/ck_stage_gate_planning.xlsx")
+    template_path = Path("data/ck_stage_gates_planning.xlsx")
     if not template_path.exists():
         raise HTTPException(status_code=404, detail="Template file not found")
     return FileResponse(
         template_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="ck_stage_gate_planning.xlsx"'},
+        headers={"Content-Disposition": 'attachment; filename="ck_stage_gates_planning.xlsx"'},
     )
 
 
