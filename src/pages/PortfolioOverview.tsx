@@ -295,6 +295,7 @@ export default function PortfolioOverview() {
   const wpHealthCounts = useMemo(() => {
     const counts = { healthy: 0, warning: 0, critical: 0 }
     workPackageRows.forEach(row => {
+      if (!hasAnyForecast(row)) return
       counts[getWorkPackageHealth(getWorkPackageDeviationCount(row))] += 1
     })
     return counts
