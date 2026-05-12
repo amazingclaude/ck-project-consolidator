@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, FolderOpen, Archive, Loader2, AlertCircle } from 'lucide-react'
+import { Plus, FolderOpen, Archive, Loader2, AlertCircle, Download } from 'lucide-react'
 import { usePlans } from '../context/PlansContext'
 import type { Plan } from '../context/PlansContext'
 import NewPlanModal from '../components/NewPlanModal'
@@ -46,13 +46,23 @@ export default function BusinessPlanning() {
             Manage your EV infrastructure business plans
           </p>
         </div>
-        <button
-          onClick={openNewModal}
-          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors"
-        >
-          <Plus size={16} />
-          New Plan
-        </button>
+        <div className="flex items-center gap-3">
+          <a
+            href="/api/plans/template/download"
+            download
+            className="flex items-center gap-2 border border-gray-200 hover:border-gray-300 text-gray-600 hover:text-gray-800 bg-white px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors"
+          >
+            <Download size={16} />
+            Download Template
+          </a>
+          <button
+            onClick={openNewModal}
+            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors"
+          >
+            <Plus size={16} />
+            New Plan
+          </button>
+        </div>
       </div>
 
       {/* Error banner */}

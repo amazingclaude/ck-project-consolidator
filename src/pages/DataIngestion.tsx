@@ -1,5 +1,5 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
-import { ArrowLeft, CheckCircle2, FileSpreadsheet, Loader2, UploadCloud } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Download, FileSpreadsheet, Loader2, UploadCloud } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { uploadMppFiles, uploadStageGatesFile, type MppUploadResult } from '../api/dataIngestionApi'
 
@@ -178,12 +178,20 @@ export default function DataIngestion() {
           <span className="w-11 h-11 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
             <FileSpreadsheet size={22} />
           </span>
-          <div>
+          <div className="flex-1">
             <h2 className="text-lg font-bold text-gray-900">Stage Gates Planning upload</h2>
             <p className="mt-1 text-sm text-gray-500 leading-relaxed">
               Upload the Stage Gates Planning Excel file (.xlsx or .xls) to update gate milestones and deadlines.
             </p>
           </div>
+          <a
+            href="/api/data-ingestion/stage-gates/template"
+            download
+            className="flex items-center gap-2 border border-gray-200 hover:border-gray-300 text-gray-600 hover:text-gray-800 bg-white px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors shrink-0"
+          >
+            <Download size={16} />
+            Download Template
+          </a>
         </div>
 
         <div className="mb-5">
