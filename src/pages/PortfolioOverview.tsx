@@ -68,6 +68,10 @@ function getWorkPackageHealth(deviationCount: number): HealthStatus {
   return 'critical'
 }
 
+function hasAnyForecast(row: StageGateRow): boolean {
+  return GATES.some(gate => isPresent(getForecast(row, gate)))
+}
+
 function MetricCard({
   children,
   className = '',
@@ -504,8 +508,9 @@ export default function PortfolioOverview() {
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {workPackageRows.map(row => {
                       const isDirty = dirtyRowIds.has(row.row_id)
-                      const deviationCount = getWorkPackageDeviationCount(row)
-                      const wpHealth = getWorkPackageHealth(deviationCount)
+                      const anyForecast = hasAnyForecast(row)
+                      const deviationCount = anyForecast ? getWorkPackageDeviationCount(row) : null
+                      const wpHealth = anyForecast ? getWorkPackageHealth(deviationCount!) : null
                       return (
                         <tr key={row.row_id} className={`hover:bg-gray-50 ${isDirty ? 'bg-blue-50/40' : ''}`}>
                           <td className="px-4 py-3 text-gray-900 font-medium min-w-56">
@@ -517,18 +522,22 @@ export default function PortfolioOverview() {
                             </span>
                           </td>
                           <td className="px-4 py-3 tabular-nums text-gray-700 font-medium">
-                            {deviationCount}
+                            {deviationCount === null ? <span className="text-gray-400">-</span> : deviationCount}
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                              wpHealth === 'healthy'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : wpHealth === 'warning'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-red-100 text-red-700'
-                            }`}>
-                              {HEALTH_CONFIG[wpHealth].label}
-                            </span>
+                            {wpHealth === null ? (
+                              <span className="text-gray-400 text-xs">-</span>
+                            ) : (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                wpHealth === 'healthy'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : wpHealth === 'warning'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-red-100 text-red-700'
+                              }`}>
+                                {HEALTH_CONFIG[wpHealth].label}
+                              </span>
+                            )}
                           </td>
                           {GATES.map(gate => {
                             const field = `planned_gate_${gate}` as keyof StageGateRow
