@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, AlertCircle, Boxes, CheckCircle, Gauge, Loader2, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
+import { Activity, AlertCircle, Boxes, CheckCircle, ChevronDown, Gauge, Loader2, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import { fetchStageGateRows, updateStageGateRow } from '../api/portfolioApi'
 import type { StageGateRow } from '../api/portfolioApi'
@@ -70,6 +70,63 @@ function getWorkPackageHealth(deviationCount: number): HealthStatus {
 
 function hasAnyForecast(row: StageGateRow): boolean {
   return GATES.some(gate => isPresent(getForecast(row, gate)))
+}
+
+function AssumptionsCard() {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-3 text-left"
+      >
+        <span className="text-sm font-semibold text-blue-800">Assumptions &amp; Definitions</span>
+        <ChevronDown
+          size={16}
+          className={`text-blue-600 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {open && (
+        <div className="px-5 pb-4 grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-gray-700">
+          <div>
+            <p className="font-semibold text-gray-900 mb-2">Work Package Health Status</p>
+            <ul className="space-y-1.5">
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                <span><span className="font-medium text-emerald-700">Green (Healthy)</span> — 0 gate deviations across all four gates.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+                <span><span className="font-medium text-amber-700">Amber (Warning)</span> — Exactly 1 gate deviation.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+                <span><span className="font-medium text-red-700">Red (Critical)</span> — 2 or more gate deviations.</span>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900 mb-2">Gate Health Status</p>
+            <ul className="space-y-1.5">
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                <span><span className="font-medium text-emerald-700">Green (Healthy)</span> — Forecast is at most 1 week later than planned (delay ≤ 1 week).</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+                <span><span className="font-medium text-amber-700">Amber (Warning)</span> — Forecast is 2 weeks later than planned (delay = 2 weeks).</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+                <span><span className="font-medium text-red-700">Red (Critical)</span> — Forecast is 3 or more weeks later than planned (delay ≥ 3 weeks).</span>
+              </li>
+            </ul>
+            <p className="mt-2 text-xs text-gray-400">A gate is only assessed when both a planned and forecast week are available.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function MetricCard({
@@ -430,6 +487,8 @@ export default function PortfolioOverview() {
               </div>
             </div>
           </div>
+
+          <AssumptionsCard />
 
           <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
