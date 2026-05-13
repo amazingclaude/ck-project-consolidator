@@ -1,14 +1,14 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react'
-import { Bot, Loader2, Send, Sparkles, User } from 'lucide-react'
+import { Bot, Loader2, Send, User } from 'lucide-react'
 import {
   sendAssistantMessage,
   type ChatMessage,
 } from '../api/aiAssistantApi'
 
 const starterPrompts = [
-  'Summarise the highest priority planning risks for my current EV rollout.',
-  'What assumptions should I validate before approving a delivery plan?',
-  'Draft an executive update for schedule, cost, and workforce readiness.',
+  'Tell me the number of sockets being delivered in a particular Work Package',
+  'What is the CAPEX plan for delivering planned sockets in a particular Work Package?',
+  'What is the impact on the CAPEX plan, if my delivery of sockets under a particular Work Package is delayed by 2 months?',
 ]
 
 export default function AIAssistant() {
@@ -77,10 +77,6 @@ export default function AIAssistant() {
             infrastructure delivery decisions with the connected AI Foundry
             model.
           </p>
-        </div>
-        <div className="hidden lg:flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-medium">
-          <Sparkles size={16} />
-          AI Foundry endpoint
         </div>
       </div>
 
@@ -191,15 +187,6 @@ export default function AIAssistant() {
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
-            <h2 className="text-sm font-bold text-gray-900 mb-2">
-              Configuration
-            </h2>
-            <p className="text-sm text-gray-500 leading-relaxed">
-              The server reads the AI Foundry endpoint and key from environment
-              variables, so credentials stay out of the browser.
-            </p>
-          </div>
         </aside>
       </div>
     </div>
