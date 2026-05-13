@@ -19,9 +19,9 @@ interface GateHealth {
 }
 
 const HEALTH_CONFIG: Record<HealthStatus, { label: string; color: string; text: string }> = {
-  healthy: { label: 'Healthy', color: '#10b981', text: 'text-emerald-600' },
-  warning: { label: 'Warning', color: '#f59e0b', text: 'text-amber-600' },
-  critical: { label: 'Critical', color: '#ef4444', text: 'text-red-600' },
+  healthy: { label: 'Green', color: '#10b981', text: 'text-emerald-600' },
+  warning: { label: 'Amber', color: '#f59e0b', text: 'text-amber-600' },
+  critical: { label: 'Red', color: '#ef4444', text: 'text-red-600' },
 }
 
 const YEAR_OPTIONS = Array.from({ length: 7 }, (_, i) => 2023 + i)
@@ -421,7 +421,7 @@ export default function PortfolioOverview() {
                 <div className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center shrink-0">
                   <Gauge size={16} className="text-cyan-600" />
                 </div>
-                <h2 className="text-sm font-semibold text-gray-700">Gate Health Status</h2>
+                <h2 className="text-sm font-semibold text-gray-700">Gate Deviations</h2>
               </div>
               <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                 {gateHealth.map(health => (
