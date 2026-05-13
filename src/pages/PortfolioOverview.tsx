@@ -80,7 +80,7 @@ function AssumptionsCard() {
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-5 py-3 text-left"
       >
-        <span className="text-sm font-semibold text-blue-800">Assumptions &amp; Definitions</span>
+        <span className="text-sm font-semibold text-blue-800">Health Status and Deviation Definitions</span>
         <ChevronDown
           size={16}
           className={`text-blue-600 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
@@ -323,13 +323,8 @@ export default function PortfolioOverview() {
   const missedGateCount = useMemo(
     () =>
       workPackageRows.reduce((count, row) => {
-        return (
-          count +
-          GATES.reduce((gateCount, gate) => {
-            const delayWeeks = getDelayWeeks(row, gate)
-            return gateCount + (delayWeeks !== null && delayWeeks > 0 ? 1 : 0)
-          }, 0)
-        )
+        if (!hasAnyForecast(row)) return count
+        return count + getWorkPackageDeviationCount(row)
       }, 0),
     [workPackageRows],
   )
