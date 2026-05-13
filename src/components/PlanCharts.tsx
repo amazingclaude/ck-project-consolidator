@@ -278,6 +278,11 @@ export default function PlanCharts({ rows, capexIncurred, planYear }: Props) {
     [filteredCapexMonthly, planYear],
   )
 
+  const truncatedCapexDetail = useMemo(
+    () => filteredCapexDetail.filter(r => r.incurred_month.slice(0, 7) <= `${planYear}-12`),
+    [filteredCapexDetail, planYear],
+  )
+
   return (
     <div className="mt-6 space-y-5">
       <FilterBar rows={rows} filter={filter} onChange={setFilter} />
@@ -377,21 +382,21 @@ export default function PlanCharts({ rows, capexIncurred, planYear }: Props) {
         costType="bom"
         description="Costs incurred by month — Initial (66.67% of BOM cost/socket) 159 days before delivery, Final (33.33% of BOM cost/socket) 33 days before delivery."
         title="Monthly BOM Costs (CAPEX)"
-        rows={filteredCapexDetail}
+        rows={truncatedCapexDetail}
       />
 
       <OffsetCapexChart
         costType="connection"
         description="Costs incurred by month — Initial (40% of connection cost/socket) 171 days before delivery, Final (60% of connection cost/socket) 33 days before delivery."
         title="Monthly Connection Costs (CAPEX)"
-        rows={filteredCapexDetail}
+        rows={truncatedCapexDetail}
       />
 
       <OffsetCapexChart
         costType="installation"
         description="Costs incurred by month — each tranche is 25% of installation cost/socket per work package: First 56 days before delivery, Second & Third 49 days before delivery, Final 10 days before delivery."
         title="Monthly Installation Costs (CAPEX)"
-        rows={filteredCapexDetail}
+        rows={truncatedCapexDetail}
       />
     </div>
   )
