@@ -58,7 +58,7 @@ function formatGate(value: number | null) {
 function getWorkPackageDeviationCount(row: StageGateRow): number {
   return GATES.reduce((count, gate) => {
     const delay = getDelayWeeks(row, gate)
-    return count + (delay !== null && delay > 0 ? 1 : 0)
+    return count + (delay !== null && delay > 1 ? 1 : 0)
   }, 0)
 }
 
