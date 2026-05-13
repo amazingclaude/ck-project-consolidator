@@ -200,12 +200,19 @@ export async function fetchCapexIncurred(id: string): Promise<CapexIncurredData>
 }
 
 export interface AIAnalysisResponse {
-  analysis: string
+  analysis: string | null
+  generated_at: string | null
   plan_id: string
 }
 
 export async function fetchPlanAIAnalysis(id: string): Promise<AIAnalysisResponse> {
   return handleResponse<AIAnalysisResponse>(await fetch(`/api/plans/${id}/ai-analysis`))
+}
+
+export async function regeneratePlanAIAnalysis(id: string): Promise<AIAnalysisResponse> {
+  return handleResponse<AIAnalysisResponse>(
+    await fetch(`/api/plans/${id}/ai-analysis`, { method: 'POST' }),
+  )
 }
 
 export async function updatePlanRow(

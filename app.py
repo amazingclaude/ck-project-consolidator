@@ -995,13 +995,21 @@ def get_plan_capex_incurred(plan_id: str):
 
 @app.get("/api/plans/{plan_id}/ai-analysis")
 def get_plan_ai_analysis(plan_id: str):
+    """Return the cached AI analysis for a plan (null if not yet generated)."""
     import db as _db
     plan = _db.get_plan(plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
-    rows = _db.get_rows(plan_id)
-    metrics = compute_metrics_from_rows(rows)
+    return {
+        "analysis": plan.get("aiAnalysis"),
+        "generated_at": plan.get("aiAnalysisGeneratedAt"),
+        "plan_id": plan_id,
+    }
 
+
+def _build_ai_analysis(plan: dict, rows: list[dict]) -> str:
+    """Compute metrics, build the prompt, and call the AI. Returns the analysis text."""
+    metrics = compute_metrics_from_rows(rows)
     capex = metrics["capex"]
     workforce = metrics["workforce"]
     total_capex = capex["total"]
@@ -1021,7 +1029,7 @@ def get_plan_ai_analysis(plan_id: str):
 
     prompt = (
         f"Analyse this EV charging infrastructure business plan and provide a concise executive summary.\n\n"
-        f"Plan: {plan.get('name', plan_id)} (Planning Year: {plan.get('planYear', 'N/A')})\n\n"
+        f"Plan: {plan.get('name', plan['id'])} (Planning Year: {plan.get('planYear', 'N/A')})\n\n"
         f"Financial Overview:\n"
         f"- Total Capex: £{total_capex:,.0f}\n"
         f"  - BOM: £{capex['bom']:,.0f} ({pct(capex['bom'])} of total)\n"
@@ -1058,13 +1066,29 @@ def get_plan_ai_analysis(plan_id: str):
     user_msg = ChatMessage(role="user", content=prompt)
 
     try:
-        analysis = ask_foundry([system_msg, user_msg])
+        return ask_foundry([system_msg, user_msg])
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"AI analysis failed: {exc}") from exc
 
-    return {"analysis": analysis, "plan_id": plan_id}
+
+@app.post("/api/plans/{plan_id}/ai-analysis", status_code=200)
+def regenerate_plan_ai_analysis(plan_id: str):
+    """Generate (or re-generate) the AI analysis, persist it, and return it."""
+    import db as _db
+    plan = _db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    rows = _db.get_rows(plan_id)
+    analysis = _build_ai_analysis(plan, rows)
+    _db.save_plan_ai_analysis(plan_id, analysis)
+    updated = _db.get_plan(plan_id)
+    return {
+        "analysis": updated.get("aiAnalysis"),
+        "generated_at": updated.get("aiAnalysisGeneratedAt"),
+        "plan_id": plan_id,
+    }
 
 
 @app.put("/api/plans/{plan_id}/rows/{row_id}", status_code=200)

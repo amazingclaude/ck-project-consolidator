@@ -67,7 +67,7 @@ def get_db() -> Iterator:
 
 # ─── Plans ────────────────────────────────────────────────────────────────────
 
-_PLAN_COLS = "plan_id, plan_name, blob_path, file_name, file_size, file_type, created_at, plan_year, status"
+_PLAN_COLS = "plan_id, plan_name, blob_path, file_name, file_size, file_type, created_at, plan_year, status, ai_analysis, ai_analysis_generated_at"
 
 
 def _row_to_plan(row) -> dict:
@@ -81,6 +81,8 @@ def _row_to_plan(row) -> dict:
         "createdAt": row[6].isoformat() if row[6] else "",
         "planYear": int(row[7]),
         "status": row[8] or "active",
+        "aiAnalysis": row[9] or None,
+        "aiAnalysisGeneratedAt": row[10].isoformat() if row[10] else None,
     }
 
 
@@ -146,6 +148,14 @@ def update_plan(plan_id: str, **kwargs) -> Optional[dict]:
 def delete_plan(plan_id: str) -> None:
     with get_db() as conn:
         conn.cursor().execute("DELETE FROM plans WHERE plan_id = ?", (plan_id,))
+
+
+def save_plan_ai_analysis(plan_id: str, analysis: str) -> None:
+    with get_db() as conn:
+        conn.cursor().execute(
+            "UPDATE plans SET ai_analysis = ?, ai_analysis_generated_at = GETUTCDATE() WHERE plan_id = ?",
+            (analysis, plan_id),
+        )
 
 
 # ─── Rows ─────────────────────────────────────────────────────────────────────

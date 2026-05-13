@@ -4,16 +4,22 @@
 -- Run once against a fresh Azure SQL database.
 
 CREATE TABLE plans (
-    plan_id    NVARCHAR(36)   NOT NULL PRIMARY KEY,
-    plan_name  NVARCHAR(255)  NOT NULL,
-    blob_path  NVARCHAR(500)  NULL,
-    file_name  NVARCHAR(255)  NULL,
-    file_size  BIGINT         NULL,
-    file_type  NVARCHAR(100)  NULL,
-    created_at DATETIME2      NOT NULL DEFAULT GETUTCDATE(),
-    plan_year  INT            NOT NULL,
-    status     NVARCHAR(20)   NOT NULL DEFAULT 'active'
+    plan_id                  NVARCHAR(36)   NOT NULL PRIMARY KEY,
+    plan_name                NVARCHAR(255)  NOT NULL,
+    blob_path                NVARCHAR(500)  NULL,
+    file_name                NVARCHAR(255)  NULL,
+    file_size                BIGINT         NULL,
+    file_type                NVARCHAR(100)  NULL,
+    created_at               DATETIME2      NOT NULL DEFAULT GETUTCDATE(),
+    plan_year                INT            NOT NULL,
+    status                   NVARCHAR(20)   NOT NULL DEFAULT 'active',
+    ai_analysis              NVARCHAR(MAX)  NULL,
+    ai_analysis_generated_at DATETIME2      NULL
 );
+
+-- Migration for existing databases (run once if upgrading from a schema without AI analysis columns):
+-- ALTER TABLE plans ADD ai_analysis NVARCHAR(MAX) NULL;
+-- ALTER TABLE plans ADD ai_analysis_generated_at DATETIME2 NULL;
 
 -- One row per work package per plan.
 -- Source columns only — no derived/computed fields stored here.
