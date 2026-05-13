@@ -993,6 +993,80 @@ def get_plan_capex_incurred(plan_id: str):
     return compute_incurred_capex_from_rows(rows)
 
 
+@app.get("/api/plans/{plan_id}/ai-analysis")
+def get_plan_ai_analysis(plan_id: str):
+    import db as _db
+    plan = _db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    rows = _db.get_rows(plan_id)
+    metrics = compute_metrics_from_rows(rows)
+
+    capex = metrics["capex"]
+    workforce = metrics["workforce"]
+    total_capex = capex["total"]
+
+    def pct(val: float) -> str:
+        return f"{val / total_capex * 100:.0f}%" if total_capex > 0 else "0%"
+
+    region_totals: dict[str, int] = {}
+    for row in rows:
+        region = str(row.get("region_name") or "Unknown")
+        region_totals[region] = region_totals.get(region, 0) + int(row.get("target_sockets") or 0)
+    top_regions = sorted(region_totals.items(), key=lambda x: x[1], reverse=True)[:5]
+    region_lines = "\n".join(f"  - {r}: {s:,} sockets" for r, s in top_regions) or "  - No regional data"
+
+    assumptions_vps = ASSUMPTIONS.get("value_per_socket", {})
+    dm_capacity = ASSUMPTIONS.get("delivery_capacity_sockets_per_year", {})
+
+    prompt = (
+        f"Analyse this EV charging infrastructure business plan and provide a concise executive summary.\n\n"
+        f"Plan: {plan.get('name', plan_id)} (Planning Year: {plan.get('planYear', 'N/A')})\n\n"
+        f"Financial Overview:\n"
+        f"- Total Capex: £{total_capex:,.0f}\n"
+        f"  - BOM: £{capex['bom']:,.0f} ({pct(capex['bom'])} of total)\n"
+        f"  - Installation: £{capex['installation']:,.0f} ({pct(capex['installation'])} of total)\n"
+        f"  - Connection: £{capex['connection']:,.0f} ({pct(capex['connection'])} of total)\n"
+        f"- Total Asset Value: £{metrics['asset_value']:,.0f}\n\n"
+        f"Delivery Scale:\n"
+        f"- Target Sockets: {metrics['target_sockets']:,}\n"
+        f"- Max Peak Installer Resource: {metrics['max_installer_resource_required']} people/week\n\n"
+        f"Workforce Requirements:\n"
+        f"- Senior Delivery Managers: {workforce['senior_delivery_managers_required']}\n"
+        f"- CK Delivery Managers: {workforce['delivery_managers_required']}\n\n"
+        f"Top Regions by Socket Target:\n{region_lines}\n\n"
+        f"Key Assumptions Used:\n"
+        f"- Capex BOM per socket: £{assumptions_vps.get('capex_bom_per_socket', 0):,.0f}\n"
+        f"- Capex Installation per socket: £{assumptions_vps.get('capex_installation_per_socket', 0):,.0f}\n"
+        f"- Capex Connection per socket: £{assumptions_vps.get('capex_connection_per_socket', 0):,.0f}\n"
+        f"- Asset value per socket: £{assumptions_vps.get('asset_value_per_socket', 0):,.0f}\n"
+        f"- Senior DM capacity: {dm_capacity.get('senior_delivery_manager', 0):,} sockets/year\n"
+        f"- CK DM capacity: {dm_capacity.get('delivery_manager', 0):,} sockets/year\n\n"
+        f"Please provide a concise executive summary in 3-4 bullet points covering: "
+        f"overall plan scale and ambition, financial investment and asset creation, "
+        f"workforce and delivery capacity requirements, and any key insights. "
+        f"Be practical and business-focused."
+    )
+
+    system_msg = ChatMessage(
+        role="system",
+        content=(
+            "You are a business analyst for Connected Kerb, an EV charging infrastructure company. "
+            "Provide concise, insightful executive-level analysis of EV infrastructure business plans."
+        ),
+    )
+    user_msg = ChatMessage(role="user", content=prompt)
+
+    try:
+        analysis = ask_foundry([system_msg, user_msg])
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI analysis failed: {exc}") from exc
+
+    return {"analysis": analysis, "plan_id": plan_id}
+
+
 @app.put("/api/plans/{plan_id}/rows/{row_id}", status_code=200)
 def update_plan_row(plan_id: str, row_id: int, body: RowUpdateBody):
     import db as _db

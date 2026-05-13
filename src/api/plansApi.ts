@@ -199,6 +199,15 @@ export async function fetchCapexIncurred(id: string): Promise<CapexIncurredData>
   )
 }
 
+export interface AIAnalysisResponse {
+  analysis: string
+  plan_id: string
+}
+
+export async function fetchPlanAIAnalysis(id: string): Promise<AIAnalysisResponse> {
+  return handleResponse<AIAnalysisResponse>(await fetch(`/api/plans/${id}/ai-analysis`))
+}
+
 export async function updatePlanRow(
   planId: string,
   rowId: number,

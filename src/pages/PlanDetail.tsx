@@ -7,6 +7,7 @@ import type { PlanMetrics, Assumptions, PlanRow, CapexIncurredData, AssumptionsU
 import MetricsSection, { MetricsSkeleton } from '../components/MetricsSection'
 import AssumptionSheet from '../components/AssumptionSheet'
 import PlanCharts from '../components/PlanCharts'
+import PlanAIAnalysis from '../components/PlanAIAnalysis'
 
 export default function PlanDetail() {
   const { planId } = useParams<{ planId: string }>()
@@ -179,6 +180,9 @@ export default function PlanDetail() {
       ) : rows.length > 0 && capexIncurred ? (
         <PlanCharts rows={rows} capexIncurred={capexIncurred} planYear={plan.planYear} />
       ) : null}
+
+      {/* AI Analysis */}
+      <PlanAIAnalysis planId={plan.id} />
 
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
