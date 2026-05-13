@@ -85,6 +85,7 @@ const OFFSET_COLORS = [
 interface Props {
   rows: PlanRow[]
   capexIncurred: CapexIncurredData
+  planYear: number
 }
 
 function formatMonthLabel(value: string) {
@@ -225,7 +226,7 @@ function OffsetCapexChart({
   )
 }
 
-export default function PlanCharts({ rows, capexIncurred }: Props) {
+export default function PlanCharts({ rows, capexIncurred, planYear }: Props) {
   const [filter, setFilter] = useState<FilterState>(DEFAULT_FILTER)
 
   const filteredRows = useMemo(
@@ -244,9 +245,15 @@ export default function PlanCharts({ rows, capexIncurred }: Props) {
   )
 
   const chartData = useMemo((): ChartPoint[] => {
+    const [startYear, startMonth] = capexIncurred.target_month_1.slice(0, 7).split('-').map(Number)
+    const monthsUntilPlanYearEnd = startYear && startMonth
+      ? (planYear - startYear) * 12 + (12 - startMonth) + 1
+      : TARGET_SOCKET_MONTHS
+    const visibleMonths = Math.min(TARGET_SOCKET_MONTHS, Math.max(0, monthsUntilPlanYearEnd))
+
     let cumTarget = 0
 
-    return Array.from({ length: TARGET_SOCKET_MONTHS }, (_, i) => {
+    return Array.from({ length: visibleMonths }, (_, i) => {
       const m = i + 1
       const monthKey = `target_sockets_${m}` as keyof PlanRow
 
@@ -262,11 +269,13 @@ export default function PlanCharts({ rows, capexIncurred }: Props) {
         targetCumulative: cumTarget,
       }
     })
-  }, [filteredRows, capexIncurred.target_month_1])
+  }, [filteredRows, capexIncurred.target_month_1, planYear])
 
   const monthlyCapexData = useMemo(
-    () => buildMonthlyCapexData(filteredCapexMonthly),
-    [filteredCapexMonthly],
+    () => buildMonthlyCapexData(
+      filteredCapexMonthly.filter(r => r.incurred_month.slice(0, 7) <= `${planYear}-12`),
+    ),
+    [filteredCapexMonthly, planYear],
   )
 
   return (

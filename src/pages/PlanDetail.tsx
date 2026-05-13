@@ -177,7 +177,7 @@ export default function PlanDetail() {
           <span className="text-sm">Loading chart data…</span>
         </div>
       ) : rows.length > 0 && capexIncurred ? (
-        <PlanCharts rows={rows} capexIncurred={capexIncurred} />
+        <PlanCharts rows={rows} capexIncurred={capexIncurred} planYear={plan.planYear} />
       ) : null}
 
       {deleteConfirm && (
