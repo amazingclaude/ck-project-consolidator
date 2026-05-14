@@ -24,6 +24,12 @@ const HEALTH_CONFIG: Record<HealthStatus, { label: string; color: string; text: 
   critical: { label: 'Red', color: '#ef4444', text: 'text-red-600' },
 }
 
+const WP_HEALTH_CONFIG: Record<HealthStatus, { label: string; color: string; text: string }> = {
+  healthy: { label: 'Healthy', color: '#10b981', text: 'text-emerald-600' },
+  warning: { label: 'Warning', color: '#f59e0b', text: 'text-amber-600' },
+  critical: { label: 'Critical', color: '#ef4444', text: 'text-red-600' },
+}
+
 const YEAR_OPTIONS = Array.from({ length: 7 }, (_, i) => 2023 + i)
 
 function isPresent(value: unknown) {
@@ -456,12 +462,12 @@ export default function PortfolioOverview() {
               label="Work Package Health Status"
             >
               <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-                {(Object.keys(HEALTH_CONFIG) as HealthStatus[]).map(status => (
+                {(Object.keys(WP_HEALTH_CONFIG) as HealthStatus[]).map(status => (
                   <div key={status}>
-                    <p className={`text-2xl font-extrabold tabular-nums ${HEALTH_CONFIG[status].text}`}>
+                    <p className={`text-2xl font-extrabold tabular-nums ${WP_HEALTH_CONFIG[status].text}`}>
                       {wpHealthCounts[status]}
                     </p>
-                    <p className="text-[11px] text-gray-400 truncate">{HEALTH_CONFIG[status].label}</p>
+                    <p className="text-[11px] text-gray-400 truncate">{WP_HEALTH_CONFIG[status].label}</p>
                   </div>
                 ))}
               </div>
@@ -590,7 +596,7 @@ export default function PortfolioOverview() {
                                     ? 'bg-amber-100 text-amber-700'
                                     : 'bg-red-100 text-red-700'
                               }`}>
-                                {HEALTH_CONFIG[wpHealth].label}
+                                {WP_HEALTH_CONFIG[wpHealth].label}
                               </span>
                             )}
                           </td>
