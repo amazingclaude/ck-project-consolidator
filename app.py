@@ -989,8 +989,12 @@ def get_plan_rows(plan_id: str):
 @app.get("/api/plans/{plan_id}/capex-incurred")
 def get_plan_capex_incurred(plan_id: str):
     import db as _db
+    plan = _db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
     rows = _db.get_rows(plan_id)
-    return compute_incurred_capex_from_rows(rows)
+    target_month_1 = f"{plan['planYear']}-01-01"
+    return compute_incurred_capex_from_rows(rows, target_month_1=target_month_1)
 
 
 @app.get("/api/plans/{plan_id}/ai-analysis")
