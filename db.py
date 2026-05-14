@@ -95,11 +95,14 @@ def create_plan(
     file_type: str,
     created_at: str,
     plan_year: int,
+    ai_analysis: Optional[str] = None,
+    ai_analysis_generated_at: Optional[str] = None
+
 ) -> dict:
     with get_db() as conn:
         conn.cursor().execute(
-            f"INSERT INTO plans ({_PLAN_COLS}) VALUES (?,?,?,?,?,?,?,?,'active')",
-            (plan_id, plan_name, blob_path, file_name, file_size, file_type, created_at, plan_year),
+        f"INSERT INTO plans ({_PLAN_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (plan_id, plan_name, blob_path, file_name, file_size, file_type, created_at, plan_year, 'active', ai_analysis, ai_analysis_generated_at)
         )
     return {
         "id": plan_id,
@@ -111,6 +114,8 @@ def create_plan(
         "createdAt": created_at,
         "planYear": plan_year,
         "status": "active",
+        "aiAnalysis": ai_analysis,
+        "aiAnalysisGeneratedAt": ai_analysis_generated_at,
     }
 
 
@@ -208,7 +213,7 @@ def sync_rows(plan_id: str, df: pd.DataFrame) -> int:
         cur = conn.cursor()
         cur.execute("DELETE FROM plan_rows WHERE plan_id = ?", (plan_id,))
         socket_col_sql = ", ".join(_SOCKET_COLS)
-        placeholders = ", ".join("?" for _ in range(1 + 3 + len(_CAPEX_COLS) + 1 + len(_SOCKET_COLS) + len(_GATE_COLS)))
+        placeholders = ", ".join("?" for _ in range(1 + 3 + len(_CAPEX_COLS) + 1 + len(_SOCKET_COLS)))
         for _, row in df.iterrows():
             cur.execute(
                 f"""
@@ -230,8 +235,7 @@ def sync_rows(plan_id: str, df: pd.DataFrame) -> int:
                     float(row["capex_connection_per_socket"]),
                     float(row["total_capex_per_socket"]),
                     int(row["target_sockets"]),
-                    *[int(row[col]) for col in _SOCKET_COLS],
-                    *[optional_int(row[col]) for col in _GATE_COLS],
+                    *[int(row[col]) for col in _SOCKET_COLS],        
                 ),
             )
     return len(df)
