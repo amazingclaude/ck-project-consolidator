@@ -4,11 +4,13 @@ A web dashboard for managing and analysing EV charging infrastructure deployment
 
 ## Features
 
-- **Portfolio Overview** — aggregate view across all active plans
-- **Plan Management** — upload, update, and delete Excel-based deployment plans
-- **Schedule & Cost Analysis** — monthly socket targets vs actuals, CapEx breakdown
-- **Business Planning** — workforce and asset value projections
-- **AI Assistant** — chat interface powered by Azure AI Foundry
+- **Portfolio Overview** — aggregate view across all active plans; stage gate health tracking (Healthy / Warning / Critical) with pie charts and gate deviation metrics per work package
+- **Plan Management** — upload, update, archive, and delete Excel-based deployment plans
+- **Schedule & Cost Analysis** — monthly socket targets vs actuals, CapEx breakdown, and incurred CapEx tracking
+- **Business Planning** — workforce and asset value projections truncated to plan year end
+- **AI Analysis** — per-plan AI-generated analysis (cached, regenerable) surfaced inside each plan detail view
+- **AI Assistant** — chat interface powered by Azure AI Foundry with persistent session history (up to 20 sessions stored locally), starter prompts, and webapp context injected automatically
+- **Data Ingestion** — upload Microsoft Project (`.mpp`) files and Stage Gates Excel (`.xlsx`) files via the Settings → Data Ingestion page
 
 ## Tech Stack
 
@@ -96,18 +98,44 @@ gunicorn -k uvicorn.workers.UvicornWorker app:app --bind=0.0.0.0:$PORT
 
 In Azure Portal → App Service → **Configuration → Application settings**, add:
 
+**General**
+
 | Name | Value |
 |---|---|
 | `ENV` | `production` |
-| `AZURE_STORAGE_CONNECTION_STRING` | your storage account connection string |
-| `AZURE_STORAGE_CONTAINER` | `plans` (or your container name) |
 | `ASSUMPTIONS_PATH` | `data/assumptions.json` |
-| `AI_FOUNDRY_ENDPOINT` | your AI Foundry endpoint |
+
+**Plan storage (Azure Blob — Excel files)**
+
+| Name | Value |
+|---|---|
+| `AZURE_STORAGE_CONNECTION_STRING` | connection string for the plans storage account |
+| `AZURE_STORAGE_CONTAINER` | `plans` (or your container name) |
+
+**Database (Azure SQL — plans, rows, stage gates)**
+
+| Name | Value |
+|---|---|
+| `AZURE_SQL_CONNECTION_STRING` | ODBC connection string for your Azure SQL database (run `db_schema.sql` once before first use) |
+
+**MPP converter (Azure Blob — `.mpp` file conversion pipeline)**
+
+| Name | Value |
+|---|---|
+| `AZURE_STORAGE_CONNECTION_STRING_MPP_CONVERTER` | connection string for the MPP converter storage account |
+| `AZURE_STORAGE_CONTAINER_MPP_CONVERTER_IN` | input container name (default: `mppinputnew`) |
+| `AZURE_STORAGE_CONTAINER_MPP_CONVERTER_OUT` | output container name where converted CSVs land (default: `mppoutputnew`) |
+
+**AI Foundry**
+
+| Name | Value |
+|---|---|
+| `AI_FOUNDRY_ENDPOINT` | your AI Foundry endpoint URL |
 | `AI_FOUNDRY_API_KEY` | your API key |
-| `AI_FOUNDRY_DEPLOYMENT` | your deployment name |
-| `AI_FOUNDRY_AGENT_NAME` | (if using project agents) |
-| `AI_FOUNDRY_AGENT_VERSION` | (if using project agents) |
+| `AI_FOUNDRY_DEPLOYMENT` | deployment name (used for direct chat completions mode) |
 | `AI_FOUNDRY_API_VERSION` | `2024-05-01-preview` |
+| `AI_FOUNDRY_AGENT_NAME` | (project agent mode only) |
+| `AI_FOUNDRY_AGENT_VERSION` | (project agent mode only) |
 
 ## Environment Variables Reference
 
