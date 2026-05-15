@@ -590,13 +590,15 @@ def chat_with_assistant(request: ChatRequest):
     for message in request.messages:
         if message.role not in {"user", "assistant"}:
             raise HTTPException(status_code=400, detail="Invalid chat message role")
+    plans_context = _build_all_plans_context()
     system_prompt = ChatMessage(
         role="system",
         content=(
             "You are the Connected Kerb planning assistant. Help users analyse "
             "EV charging infrastructure plans, delivery risks, schedules, costs, "
             "assumptions, and portfolio trade-offs. Be concise, practical, and "
-            "ask for missing plan context when needed."
+            "ask for missing plan context when needed.\n\n"
+            f"{plans_context}"
         ),
     )
     return {"message": ask_foundry([system_prompt, *request.messages])}
@@ -1009,6 +1011,73 @@ def get_plan_ai_analysis(plan_id: str):
         "generated_at": plan.get("aiAnalysisGeneratedAt"),
         "plan_id": plan_id,
     }
+
+
+def _build_plan_context_block(plan: dict, rows: list[dict]) -> str:
+    """Build a structured text block describing a plan's metrics (no AI call)."""
+    metrics = compute_metrics_from_rows(rows)
+    capex = metrics["capex"]
+    workforce = metrics["workforce"]
+    total_capex = capex["total"]
+
+    def pct(val: float) -> str:
+        return f"{val / total_capex * 100:.0f}%" if total_capex > 0 else "0%"
+
+    region_totals: dict[str, int] = {}
+    for row in rows:
+        region = str(row.get("region_name") or "Unknown")
+        region_totals[region] = region_totals.get(region, 0) + int(row.get("target_sockets") or 0)
+    top_regions = sorted(region_totals.items(), key=lambda x: x[1], reverse=True)[:5]
+    region_lines = "\n".join(f"    - {r}: {s:,} sockets" for r, s in top_regions) or "    - No regional data"
+
+    assumptions_vps = ASSUMPTIONS.get("value_per_socket", {})
+    dm_capacity_a = ASSUMPTIONS.get("delivery_capacity_sockets_per_year", {})
+
+    return (
+        f"Plan: {plan.get('name', plan['id'])} (ID: {plan['id']}, Planning Year: {plan.get('planYear', 'N/A')})\n"
+        f"  Financial Overview:\n"
+        f"    - Total Capex: £{total_capex:,.0f}\n"
+        f"      - BOM: £{capex['bom']:,.0f} ({pct(capex['bom'])} of total)\n"
+        f"      - Installation: £{capex['installation']:,.0f} ({pct(capex['installation'])} of total)\n"
+        f"      - Connection: £{capex['connection']:,.0f} ({pct(capex['connection'])} of total)\n"
+        f"    - Total Asset Value: £{metrics['asset_value']:,.0f}\n"
+        f"  Delivery Scale:\n"
+        f"    - Target Sockets: {metrics['target_sockets']:,}\n"
+        f"    - Max Peak Installer Resource: {metrics['max_installer_resource_required']} people/week\n"
+        f"  Workforce Requirements:\n"
+        f"    - Senior Delivery Managers: {workforce['senior_delivery_managers_required']}\n"
+        f"    - CK Delivery Managers: {workforce['delivery_managers_required']}\n"
+        f"  Top Regions by Socket Target:\n{region_lines}\n"
+        f"  Key Assumptions:\n"
+        f"    - Capex BOM per socket: £{assumptions_vps.get('capex_bom_per_socket', 0):,.0f}\n"
+        f"    - Capex Installation per socket: £{assumptions_vps.get('capex_installation_per_socket', 0):,.0f}\n"
+        f"    - Capex Connection per socket: £{assumptions_vps.get('capex_connection_per_socket', 0):,.0f}\n"
+        f"    - Asset value per socket: £{assumptions_vps.get('asset_value_per_socket', 0):,.0f}\n"
+        f"    - Senior DM capacity: {dm_capacity_a.get('senior_delivery_manager', 0):,} sockets/year\n"
+        f"    - CK DM capacity: {dm_capacity_a.get('delivery_manager', 0):,} sockets/year"
+    )
+
+
+def _build_all_plans_context() -> str:
+    """Fetch all plans and build a combined context block for the AI assistant system prompt."""
+    import db as _db
+    plans = _db.list_plans()
+    if not plans:
+        return "No business plans are currently loaded in the system."
+
+    blocks: list[str] = []
+    for plan in plans:
+        try:
+            rows = _db.get_rows(plan["id"])
+            if rows:
+                blocks.append(_build_plan_context_block(plan, rows))
+        except Exception:
+            pass
+
+    if not blocks:
+        return "No plan data is available yet."
+
+    return "Current Business Plans in the System:\n\n" + "\n\n".join(blocks)
 
 
 def _build_ai_analysis(plan: dict, rows: list[dict]) -> str:
