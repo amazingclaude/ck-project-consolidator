@@ -171,7 +171,7 @@ export interface CapexIncurredDetailPoint {
   contract_name: string
   work_package_name: string
   cost_type: 'bom' | 'connection' | 'installation' | string
-  payment_installment: number
+  payment_installment: string
   offset_days: number
   target_sockets: number
   incurred_month: string

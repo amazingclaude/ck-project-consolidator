@@ -2,7 +2,6 @@ import io
 import json
 import math
 import os
-import re
 import urllib.error
 import urllib.request
 import uuid
@@ -10,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 import uvicorn
@@ -302,46 +302,18 @@ def compute_metrics_from_rows(rows: list[dict], plan_year: int = 2026) -> dict:
     }
 '''
 
-def collapse_target_sockets_to_latest_month(df: pd.DataFrame) -> pd.DataFrame:
-    """Collapse each row's target sockets into its latest non-zero target month."""
-    df_new = df.copy()
-    target_cols = [
-        col
-        for col in df_new.columns
-        if re.fullmatch(r"target_sockets_\d+", str(col))
-    ]
-    if not target_cols:
-        return df_new
-
-    target_cols = sorted(target_cols, key=lambda col: int(col.rsplit("_", 1)[1]))
-    df_new[target_cols] = df_new[target_cols].apply(
-        pd.to_numeric,
-        errors="coerce",
-    ).fillna(0)
-
-    active = df_new[target_cols].ne(0)
-    has_active = active.any(axis=1)
-    row_sums = df_new[target_cols].sum(axis=1)
-    latest_cols = active.iloc[:, ::-1].idxmax(axis=1)
-
-    df_new[target_cols] = 0
-    for idx in df_new.index[has_active]:
-        df_new.at[idx, latest_cols.at[idx]] = row_sums.at[idx]
-
-    if "target_sockets" in df_new.columns:
-        df_new["target_sockets"] = row_sums
-
-    return df_new
-
-
 def compute_incurred_capex_from_rows(
     rows: list[dict],
     target_month_1: str = "2026-01-01",
 ) -> dict:
-    """Calculate incurred CAPEX timing from SQL rows and assumptions.json.
+    """Calculate incurred CAPEX timing from SQL rows using the new methodology.
 
-    This mirrors notebook/capex_calculation.py while returning JSON-safe rows for
-    the React charts.
+    Algorithm (mirrors notebook/capex_calculation_new.ipynb):
+    - BOM:          100% of total sockets × cost/socket, 30 days before midpoint of first install month
+    - Connection:   40% of total sockets × cost/socket, 138 days before midpoint of first install month;
+                    60% per install month at month end (proportional to monthly sockets)
+    - Installation: 4 tranches of 25% each, paid at month end when cumulative sockets
+                    reach 25%, 50%, 80%, and 100% of total target sockets
     """
     if not rows:
         return {"target_month_1": target_month_1, "detail": [], "monthly_by_type": []}
@@ -349,97 +321,135 @@ def compute_incurred_capex_from_rows(
     df = pd.DataFrame(rows)
     group_cols = ["region_name", "contract_name", "work_package_name"]
     target_cols = [f"target_sockets_{i}" for i in range(1, TARGET_SOCKET_MONTHS + 1)]
-    payment_schedule = pd.DataFrame(ASSUMPTIONS["payment_schedule"])
-    if "payment_installment" not in payment_schedule.columns:
-        payment_schedule["payment_installment"] = (
-            payment_schedule.groupby("cost_type").cumcount() + 1
-        )
-    payment_schedule["payment_installment"] = pd.to_numeric(
-        payment_schedule["payment_installment"],
-        errors="coerce",
-    ).fillna(0).astype(int)
-    cost_cols = sorted(payment_schedule["cost_column"].unique())
+    cost_cols = ["capex_bom_per_socket", "capex_installation_per_socket", "capex_connection_per_socket"]
 
     for col in group_cols:
         if col not in df.columns:
             df[col] = ""
-    for col in target_cols:
-        if col not in df.columns:
-            df[col] = 0
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-    for col in cost_cols:
+    for col in target_cols + cost_cols:
         if col not in df.columns:
             df[col] = 0.0
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-    df = collapse_target_sockets_to_latest_month(df)
     start_month = pd.Timestamp(target_month_1).to_period("M").to_timestamp()
-    socket_long = df.melt(
-        id_vars=group_cols + cost_cols,
-        value_vars=target_cols,
-        var_name="target_socket_column",
-        value_name="monthly_target_sockets",
-    )
-    socket_long["target_sockets"] = pd.to_numeric(
-        socket_long["monthly_target_sockets"],
-        errors="coerce",
-    ).fillna(0)
-    socket_long = socket_long.drop(columns=["monthly_target_sockets"])
-    socket_long = socket_long[socket_long["target_sockets"] != 0].copy()
 
-    if socket_long.empty:
+    def _month_start(month_num: int) -> pd.Timestamp:
+        return start_month + pd.DateOffset(months=month_num - 1)
+
+    def _month_end(month_num: int) -> pd.Timestamp:
+        return _month_start(month_num) + pd.offsets.MonthEnd(0)
+
+    def _month_midpoint(month_num: int) -> pd.Timestamp:
+        ms = _month_start(month_num)
+        me = _month_end(month_num)
+        return ms + pd.Timedelta(days=(me - ms).days / 2)
+
+    output_rows: list[dict] = []
+
+    for _, row in df.iterrows():
+        region_name = row.get("region_name", "")
+        contract_name = row.get("contract_name", "")
+        work_package_name = row.get("work_package_name", "")
+
+        bom_per_socket = float(row.get("capex_bom_per_socket", 0) or 0)
+        installation_per_socket = float(row.get("capex_installation_per_socket", 0) or 0)
+        connection_per_socket = float(row.get("capex_connection_per_socket", 0) or 0)
+
+        sockets = [float(row.get(f"target_sockets_{i}", 0) or 0) for i in range(1, TARGET_SOCKET_MONTHS + 1)]
+        total_sockets = sum(sockets)
+
+        if total_sockets <= 0:
+            continue
+
+        non_zero_months = [i for i, s in enumerate(sockets, start=1) if s > 0]
+        first_month_num = non_zero_months[0]
+        first_midpoint = _month_midpoint(first_month_num)
+
+        base = {
+            "region_name": region_name,
+            "contract_name": contract_name,
+            "work_package_name": work_package_name,
+        }
+
+        # BOM: 100% at first_midpoint - 30 days
+        bom_date = first_midpoint - pd.Timedelta(days=30)
+        output_rows.append({
+            **base,
+            "cost_type": "bom",
+            "payment_installment": "full",
+            "offset_days": -30,
+            "target_sockets": total_sockets,
+            "incurred_month": bom_date.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
+            "incurred_cost": float(total_sockets * bom_per_socket),
+        })
+
+        # Connection initial: 40% at first_midpoint - 138 days
+        conn_init_date = first_midpoint - pd.Timedelta(days=138)
+        output_rows.append({
+            **base,
+            "cost_type": "connection",
+            "payment_installment": "initial_40pct",
+            "offset_days": -138,
+            "target_sockets": total_sockets,
+            "incurred_month": conn_init_date.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
+            "incurred_cost": float(total_sockets * connection_per_socket * 0.40),
+        })
+
+        # Connection final: 60% per install month at month end
+        for month_num, monthly_sockets in enumerate(sockets, start=1):
+            if monthly_sockets <= 0:
+                continue
+            me = _month_end(month_num)
+            output_rows.append({
+                **base,
+                "cost_type": "connection",
+                "payment_installment": "final_60pct",
+                "offset_days": 0,
+                "target_sockets": monthly_sockets,
+                "incurred_month": me.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
+                "incurred_cost": float(monthly_sockets * connection_per_socket * 0.60),
+            })
+
+        # Installation: 4 tranches at cumulative thresholds 25/50/80/100%
+        cumulative = np.cumsum(sockets)
+        tranche_amount = total_sockets * installation_per_socket * 0.25
+        for installment_name, threshold_pct in [
+            ("tranche_1", 0.25),
+            ("tranche_2", 0.50),
+            ("tranche_3", 0.80),
+            ("tranche_4", 1.00),
+        ]:
+            hit_idx = np.where(cumulative >= total_sockets * threshold_pct - 1e-9)[0]
+            if len(hit_idx) == 0:
+                continue
+            month_idx = int(hit_idx[0]) + 1
+            me = _month_end(month_idx)
+            output_rows.append({
+                **base,
+                "cost_type": "installation",
+                "payment_installment": installment_name,
+                "offset_days": 0,
+                "target_sockets": total_sockets,
+                "incurred_month": me.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
+                "incurred_cost": float(tranche_amount),
+            })
+
+    if not output_rows:
         return {"target_month_1": target_month_1, "detail": [], "monthly_by_type": []}
 
-    socket_long["target_month_number"] = (
-        socket_long["target_socket_column"].str.extract(r"(\d+)$").astype(int)
-    )
-    socket_long["target_month_end"] = socket_long["target_month_number"].apply(
-        lambda month_no: start_month + pd.DateOffset(months=int(month_no) - 1) + pd.offsets.MonthEnd(0)
-    )
+    detail_df = pd.DataFrame(output_rows)
+    detail_df["incurred_cost"] = detail_df["incurred_cost"].astype(float)
 
-    detail = socket_long.merge(payment_schedule, how="cross")
-    detail["cost_per_socket"] = 0.0
-    for cost_column in cost_cols:
-        mask = detail["cost_column"].eq(cost_column)
-        detail.loc[mask, "cost_per_socket"] = detail.loc[mask, cost_column]
-
-    detail["incurred_date"] = detail["target_month_end"] + pd.to_timedelta(
-        detail["offset_days"],
-        unit="D",
-    )
-    detail["incurred_month"] = detail["incurred_date"].dt.to_period("M").dt.to_timestamp("M")
-    detail["incurred_cost"] = (
-        detail["target_sockets"] * detail["cost_per_socket"] * detail["payment_pct"]
-    )
-
-    monthly_by_type = (
-        detail.groupby(group_cols + ["incurred_month", "cost_type"], as_index=False)[
-            "incurred_cost"
-        ]
+    monthly_out = (
+        detail_df.groupby(group_cols + ["incurred_month", "cost_type"], as_index=False)["incurred_cost"]
         .sum()
         .sort_values(group_cols + ["incurred_month", "cost_type"])
     )
-
-    detail_out = detail[
-        group_cols
-        + [
-            "cost_type",
-            "payment_installment",
-            "offset_days",
-            "target_sockets",
-            "incurred_month",
-            "incurred_cost",
-        ]
-    ].copy()
-    monthly_out = monthly_by_type.copy()
-
-    for frame in (detail_out, monthly_out):
-        frame["incurred_month"] = frame["incurred_month"].dt.strftime("%Y-%m-%d")
-        frame["incurred_cost"] = frame["incurred_cost"].astype(float)
+    monthly_out["incurred_cost"] = monthly_out["incurred_cost"].astype(float)
 
     return {
         "target_month_1": target_month_1,
-        "detail": detail_out.to_dict(orient="records"),
+        "detail": detail_df.to_dict(orient="records"),
         "monthly_by_type": monthly_out.to_dict(orient="records"),
     }
 

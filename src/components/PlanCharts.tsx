@@ -141,9 +141,35 @@ function buildMonthlyCapexData(rows: CapexIncurredMonthlyPoint[]): CapexStackPoi
   return Array.from(byMonth.values()).sort(sortByMonth)
 }
 
+const INSTALLMENT_ORDER = ['full', 'initial_40pct', 'final_60pct', 'tranche_1', 'tranche_2', 'tranche_3', 'tranche_4']
+
+function sortInstallments(a: string, b: string): number {
+  const ai = INSTALLMENT_ORDER.indexOf(a)
+  const bi = INSTALLMENT_ORDER.indexOf(b)
+  if (ai === -1 && bi === -1) return a.localeCompare(b)
+  if (ai === -1) return 1
+  if (bi === -1) return -1
+  return ai - bi
+}
+
+const INSTALLMENT_LABELS: Record<string, string> = {
+  full: 'Full (100%)',
+  initial_40pct: 'Initial (40%)',
+  final_60pct: 'Final (60%)',
+  tranche_1: 'Tranche 1 (25%)',
+  tranche_2: 'Tranche 2 (25%)',
+  tranche_3: 'Tranche 3 (25%)',
+  tranche_4: 'Tranche 4 (25%)',
+}
+
+function formatInstallmentLabel(key: string): string {
+  const raw = key.replace(/^installment_/, '')
+  return INSTALLMENT_LABELS[raw] ?? raw
+}
+
 function buildInstallmentCapexData(rows: CapexIncurredDetailPoint[], costType: string) {
   const costRows = rows.filter(row => row.cost_type === costType)
-  const installments = Array.from(new Set(costRows.map(row => row.payment_installment))).sort((a, b) => a - b)
+  const installments = Array.from(new Set(costRows.map(row => row.payment_installment))).sort(sortInstallments)
   const byMonth = new Map<string, CapexStackPoint>()
 
   costRows.forEach(row => {
@@ -194,12 +220,12 @@ function OffsetCapexChart({
           <Tooltip
             formatter={(value: number | string, name: string) => [
               fmtCurrency(Number(value)),
-              name === 'Total' ? 'Total' : String(name).replace('installment_', 'Installment '),
+              name === 'Total' ? 'Total' : formatInstallmentLabel(String(name)),
             ]}
           />
           <Legend
             wrapperStyle={LEGEND}
-            formatter={value => String(value).replace('installment_', 'Installment ')}
+            formatter={value => formatInstallmentLabel(String(value))}
           />
           {installments.map((installment, index) => (
             <Bar
@@ -380,21 +406,21 @@ export default function PlanCharts({ rows, capexIncurred, planYear }: Props) {
 
       <OffsetCapexChart
         costType="bom"
-        description="Costs incurred by month — Initial (66.67% of BOM cost/socket) 159 days before delivery, Final (33.33% of BOM cost/socket) 33 days before delivery."
+        description="Full BOM cost (100% of total sockets × cost/socket) incurred 30 days before the midpoint of the first installation month."
         title="Monthly BOM Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />
 
       <OffsetCapexChart
         costType="connection"
-        description="Costs incurred by month — Initial (40% of connection cost/socket) 171 days before delivery, Final (60% of connection cost/socket) 33 days before delivery."
+        description="Initial payment (40% of total connection cost) incurred 138 days before the midpoint of the first installation month. Final payment (60%) split across each installation month at month end, proportional to monthly sockets."
         title="Monthly Connection Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />
 
       <OffsetCapexChart
         costType="installation"
-        description="Costs incurred by month — each tranche is 25% of installation cost/socket per work package: First 56 days before delivery, Second & Third 49 days before delivery, Final 10 days before delivery."
+        description="Four equal tranches of 25% of total installation cost per work package, each paid at month end when cumulative installed sockets reach 25%, 50%, 80%, and 100% of total target sockets."
         title="Monthly Installation Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />
