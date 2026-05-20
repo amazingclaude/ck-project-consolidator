@@ -406,21 +406,21 @@ export default function PlanCharts({ rows, capexIncurred, planYear }: Props) {
 
       <OffsetCapexChart
         costType="bom"
-        description="Full BOM cost (100% of total sockets × cost/socket) incurred 30 days before the midpoint of the first installation month."
+        description="Full BOM cost (100% of total sockets × cost/socket) incurred 30 days before the first installation month."
         title="Monthly BOM Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />
 
       <OffsetCapexChart
         costType="connection"
-        description="Initial payment (40% of total connection cost) incurred 138 days before the midpoint of the first installation month. Final payment (60%) split across each installation month at month end, proportional to monthly sockets."
+        description="Initial payment (40% of total connection cost) incurred 138 days before the midpoint of the first installation month. Final payment (60%) split across each installation month, proportional to monthly sockets."
         title="Monthly Connection Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />
 
       <OffsetCapexChart
         costType="installation"
-        description="Four equal tranches of 25% of total installation cost per work package, each paid at month end when cumulative installed sockets reach 25%, 50%, 80%, and 100% of total target sockets."
+        description="Four equal tranches of 25% of total installation cost per work package, each paid at month when cumulative installed sockets reach 25%, 50%, 80%, and 100% of total target sockets."
         title="Monthly Installation Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />
