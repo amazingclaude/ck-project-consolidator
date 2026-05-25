@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, AlertCircle, Boxes, CheckCircle, ChevronDown, Gauge, Loader2, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
+import { Activity, AlertCircle, Boxes, Calendar, CheckCircle, ChevronDown, Gauge, Loader2, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import { fetchStageGateRows, updateStageGateRow } from '../api/portfolioApi'
 import type { StageGateRow } from '../api/portfolioApi'
@@ -48,6 +48,14 @@ function getDelayWeeks(row: StageGateRow, gate: GateNumber) {
   const planned = getPlanned(row, gate)
   const forecast = getForecast(row, gate)
   if (!isPresent(planned) || !isPresent(forecast)) return null
+  return Number(forecast) - Number(planned)
+}
+
+function getDelayWeeksCurrentOnly(row: StageGateRow, gate: GateNumber, currentWeek: number) {
+  const planned = getPlanned(row, gate)
+  const forecast = getForecast(row, gate)
+  if (!isPresent(planned) || !isPresent(forecast)) return null
+  if (Number(forecast) < currentWeek) return null
   return Number(forecast) - Number(planned)
 }
 
@@ -320,6 +328,20 @@ export default function PortfolioOverview() {
     }
   }
 
+  const currentWeek = useMemo(() => {
+    const date = new Date()
+    const isoDay = (date.getDay() + 6) % 7
+    const monday = new Date(date)
+    monday.setDate(date.getDate() - isoDay)
+    monday.setHours(0, 0, 0, 0)
+    const jan4 = new Date(monday.getFullYear(), 0, 4)
+    const jan4IsoDay = (jan4.getDay() + 6) % 7
+    const week1Monday = new Date(jan4)
+    week1Monday.setDate(jan4.getDate() - jan4IsoDay)
+    week1Monday.setHours(0, 0, 0, 0)
+    return Math.round((monday.getTime() - week1Monday.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1
+  }, [])
+
   const displayRows = editMode ? localRows : rows
   const workPackageRows = useMemo(
     () => displayRows.filter(row => isPresent(row.work_package_name)),
@@ -358,6 +380,33 @@ export default function PortfolioOverview() {
     })
     return counts
   }, [workPackageRows])
+
+  const currentMissedGateCount = useMemo(
+    () =>
+      workPackageRows.reduce((count, row) => {
+        if (!hasAnyForecast(row)) return count
+        return count + GATES.reduce((c, gate) => {
+          const delay = getDelayWeeksCurrentOnly(row, gate, currentWeek)
+          return c + (delay !== null && delay > 1 ? 1 : 0)
+        }, 0)
+      }, 0),
+    [workPackageRows, currentWeek],
+  )
+
+  const currentGateHealth = useMemo<GateHealth[]>(
+    () =>
+      GATES.map(gate => {
+        const health: GateHealth = { gate, healthy: 0, warning: 0, critical: 0, total: 0 }
+        workPackageRows.forEach(row => {
+          const delayWeeks = getDelayWeeksCurrentOnly(row, gate, currentWeek)
+          if (delayWeeks === null) return
+          health[getHealthStatus(delayWeeks)] += 1
+          health.total += 1
+        })
+        return health
+      }),
+    [workPackageRows, currentWeek],
+  )
 
   return (
     <div className="px-8 py-8 min-h-full">
@@ -440,6 +489,12 @@ export default function PortfolioOverview() {
         </div>
       ) : (
         <>
+          <div className="mb-6 flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl w-fit shadow-sm">
+            <Calendar size={15} className="text-blue-500 shrink-0" />
+            <span className="text-sm text-gray-500">Current Week</span>
+            <span className="text-lg font-extrabold text-gray-900 tabular-nums">W{currentWeek}</span>
+          </div>
+
           <div className="grid grid-cols-12 gap-4 mb-8">
             {/* Row 1: three summary metric cards */}
             <MetricCard
