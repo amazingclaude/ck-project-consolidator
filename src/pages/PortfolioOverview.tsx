@@ -542,6 +542,29 @@ export default function PortfolioOverview() {
                 ))}
               </div>
             </div>
+
+            {/* Row 3: current gate health donut charts */}
+            <div className="col-span-12 bg-white border border-gray-200 rounded-xl p-5">
+              <div className="flex items-center justify-between gap-2 mb-5">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+                    <Gauge size={16} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-semibold text-gray-700">Gate Deviations (Current)</h2>
+                    <p className="text-xs text-gray-400">Future gates only — forecast gate ≥ W{currentWeek}</p>
+                  </div>
+                </div>
+                <span className="text-sm font-semibold text-gray-700">
+                  {currentMissedGateCount} deviation{currentMissedGateCount !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+                {currentGateHealth.map(health => (
+                  <GateRing key={health.gate} health={health} />
+                ))}
+              </div>
+            </div>
           </div>
 
           <AssumptionsCard />
