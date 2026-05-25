@@ -413,14 +413,14 @@ export default function PlanCharts({ rows, capexIncurred, planYear }: Props) {
 
       <OffsetCapexChart
         costType="connection"
-        description="Initial payment (40% of total connection cost) incurred 138 days before the midpoint of the first installation month. Final payment (60%) split across each installation month, proportional to monthly sockets."
+        description="Initial payment (40% of total connection cost) incurred 108 days before the midpoint of the first installation month. Final payment (60%) split across each installation month, incurred 35 days after that month's midpoint, proportional to monthly sockets."
         title="Monthly Connection Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />
 
       <OffsetCapexChart
         costType="installation"
-        description="Four equal tranches of 25% of total installation cost per work package, each paid at month when cumulative installed sockets reach 25%, 50%, 80%, and 100% of total target sockets."
+        description="Tranche 1 (25%) at month cumulative sockets reach 25%; Tranche 2 (25%) at 50%; Tranche 3 (30%) at 100%; Tranche 4 (20%) incurred 49 days after the midpoint of the last installation month."
         title="Monthly Installation Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />

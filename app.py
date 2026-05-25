@@ -310,10 +310,12 @@ def compute_incurred_capex_from_rows(
 
     Algorithm (mirrors notebook/capex_calculation_new.ipynb):
     - BOM:          100% of total sockets × cost/socket, 30 days before midpoint of first install month
-    - Connection:   40% of total sockets × cost/socket, 138 days before midpoint of first install month;
-                    60% per install month at month end (proportional to monthly sockets)
-    - Installation: 4 tranches of 25% each, paid at month end when cumulative sockets
-                    reach 25%, 50%, 80%, and 100% of total target sockets
+    - Connection:   40% of total sockets × cost/socket, 108 days before midpoint of first install month;
+                    60% per install month, 35 days after that month's midpoint (proportional to monthly sockets)
+    - Installation: Tranche 1: 25% when cumulative sockets reach 25%, paid at month end
+                    Tranche 2: 25% when cumulative sockets reach 50%, paid at month end
+                    Tranche 3: 30% when cumulative sockets reach 100%, paid at month end
+                    Tranche 4: 20% at last install month midpoint + 49 days
     """
     if not rows:
         return {"target_month_1": target_month_1, "detail": [], "monthly_by_type": []}
@@ -383,41 +385,41 @@ def compute_incurred_capex_from_rows(
             "incurred_cost": float(total_sockets * bom_per_socket),
         })
 
-        # Connection initial: 40% at first_midpoint - 138 days
-        conn_init_date = first_midpoint - pd.Timedelta(days=138)
+        # Connection initial: 40% at first_midpoint - 108 days
+        conn_init_date = first_midpoint - pd.Timedelta(days=108)
         output_rows.append({
             **base,
             "cost_type": "connection",
             "payment_installment": "initial_40pct",
-            "offset_days": -138,
+            "offset_days": -108,
             "target_sockets": total_sockets,
             "incurred_month": conn_init_date.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
             "incurred_cost": float(total_sockets * connection_per_socket * 0.40),
         })
 
-        # Connection final: 60% per install month at month end
+        # Connection final: 60% per install month, 35 days after that month's midpoint
         for month_num, monthly_sockets in enumerate(sockets, start=1):
             if monthly_sockets <= 0:
                 continue
-            me = _month_end(month_num)
+            conn_final_date = _month_midpoint(month_num) + pd.Timedelta(days=35)
             output_rows.append({
                 **base,
                 "cost_type": "connection",
                 "payment_installment": "final_60pct",
-                "offset_days": 0,
+                "offset_days": 35,
                 "target_sockets": monthly_sockets,
-                "incurred_month": me.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
+                "incurred_month": conn_final_date.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
                 "incurred_cost": float(monthly_sockets * connection_per_socket * 0.60),
             })
 
-        # Installation: 4 tranches at cumulative thresholds 25/50/80/100%
+        # Installation: tranches 1-3 at cumulative thresholds, tranche 4 after last install month
+        last_month_num = non_zero_months[-1]
+        last_midpoint = _month_midpoint(last_month_num)
         cumulative = np.cumsum(sockets)
-        tranche_amount = total_sockets * installation_per_socket * 0.25
-        for installment_name, threshold_pct in [
-            ("tranche_1", 0.25),
-            ("tranche_2", 0.50),
-            ("tranche_3", 0.80),
-            ("tranche_4", 1.00),
+        for installment_name, threshold_pct, payment_pct in [
+            ("tranche_1", 0.25, 0.25),
+            ("tranche_2", 0.50, 0.25),
+            ("tranche_3", 1.00, 0.30),
         ]:
             hit_idx = np.where(cumulative >= total_sockets * threshold_pct - 1e-9)[0]
             if len(hit_idx) == 0:
@@ -431,8 +433,20 @@ def compute_incurred_capex_from_rows(
                 "offset_days": 0,
                 "target_sockets": total_sockets,
                 "incurred_month": me.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
-                "incurred_cost": float(tranche_amount),
+                "incurred_cost": float(total_sockets * installation_per_socket * payment_pct),
             })
+
+        # Tranche 4: 20% at last install month midpoint + 49 days
+        tranche_4_date = last_midpoint + pd.Timedelta(days=49)
+        output_rows.append({
+            **base,
+            "cost_type": "installation",
+            "payment_installment": "tranche_4",
+            "offset_days": 49,
+            "target_sockets": total_sockets,
+            "incurred_month": tranche_4_date.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
+            "incurred_cost": float(total_sockets * installation_per_socket * 0.20),
+        })
 
     if not output_rows:
         return {"target_month_1": target_month_1, "detail": [], "monthly_by_type": []}
