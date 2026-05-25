@@ -158,8 +158,8 @@ const INSTALLMENT_LABELS: Record<string, string> = {
   final_60pct: 'Final (60%)',
   tranche_1: 'Tranche 1 (25%)',
   tranche_2: 'Tranche 2 (25%)',
-  tranche_3: 'Tranche 3 (25%)',
-  tranche_4: 'Tranche 4 (25%)',
+  tranche_3: 'Tranche 3 (30%)',
+  tranche_4: 'Tranche 4 (20%)',
 }
 
 function formatInstallmentLabel(key: string): string {
