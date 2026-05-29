@@ -223,7 +223,8 @@ function GateRing({ health }: { health: GateHealth }) {
 }
 
 export default function PortfolioOverview() {
-  const [planYear, setPlanYear] = useState(new Date().getFullYear())
+  const currentYear = new Date().getFullYear()
+  const [planYear, setPlanYear] = useState(currentYear)
   const [rows, setRows] = useState<StageGateRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -343,6 +344,7 @@ export default function PortfolioOverview() {
   }, [])
 
   const displayRows = editMode ? localRows : rows
+  const isCurrentPlanningYear = planYear === currentYear
   const workPackageRows = useMemo(
     () => displayRows.filter(row => isPresent(row.work_package_name)),
     [displayRows],
@@ -489,11 +491,13 @@ export default function PortfolioOverview() {
         </div>
       ) : (
         <>
-          <div className="mb-6 flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl w-fit shadow-sm">
-            <Calendar size={15} className="text-blue-500 shrink-0" />
-            <span className="text-sm text-gray-500">Current Week</span>
-            <span className="text-lg font-extrabold text-gray-900 tabular-nums">W{currentWeek}</span>
-          </div>
+          {isCurrentPlanningYear && (
+            <div className="mb-6 flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl w-fit shadow-sm">
+              <Calendar size={15} className="text-blue-500 shrink-0" />
+              <span className="text-sm text-gray-500">Current Week</span>
+              <span className="text-lg font-extrabold text-gray-900 tabular-nums">W{currentWeek}</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-12 gap-4 mb-8">
             {/* Row 1: three summary metric cards */}
@@ -544,7 +548,8 @@ export default function PortfolioOverview() {
             </div>
 
             {/* Row 3: current gate health donut charts */}
-            <div className="col-span-12 bg-white border border-gray-200 rounded-xl p-5">
+            {isCurrentPlanningYear && (
+              <div className="col-span-12 bg-white border border-gray-200 rounded-xl p-5">
               <div className="flex items-center justify-between gap-2 mb-5">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
@@ -564,7 +569,8 @@ export default function PortfolioOverview() {
                   <GateRing key={health.gate} health={health} />
                 ))}
               </div>
-            </div>
+              </div>
+            )}
           </div>
 
           <AssumptionsCard />

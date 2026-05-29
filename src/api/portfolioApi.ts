@@ -28,6 +28,18 @@ export async function fetchStageGateRows(planYear: number): Promise<StageGateRow
   )
 }
 
+export interface DeleteStageGatePlanResult {
+  planYear: number
+  deleted: boolean
+  message: string
+}
+
+export async function deleteStageGatePlan(planYear: number): Promise<DeleteStageGatePlanResult> {
+  return handleResponse<DeleteStageGatePlanResult>(
+    await fetch(`/api/stage-gates/plans/${planYear}`, { method: 'DELETE' }),
+  )
+}
+
 type GateFields = Pick<
   StageGateRow,
   | 'planned_gate_1' | 'planned_gate_2' | 'planned_gate_3' | 'planned_gate_4'

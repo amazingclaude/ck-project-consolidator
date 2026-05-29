@@ -883,6 +883,21 @@ def get_stage_gate_rows_endpoint(plan_year: int):
     return _db.get_stage_gate_rows_by_year(plan_year)
 
 
+@app.delete("/api/stage-gates/plans/{plan_year}", status_code=200)
+def delete_stage_gate_plan_endpoint(plan_year: int):
+    import db as _db
+    deleted_count = _db.delete_stage_gate_plan_by_year(plan_year)
+    return {
+        "planYear": plan_year,
+        "deleted": deleted_count > 0,
+        "message": (
+            f"Deleted stage gate plan for {plan_year}."
+            if deleted_count > 0
+            else f"No stage gate plan found for {plan_year}."
+        ),
+    }
+
+
 @app.put("/api/stage-gates/rows/{row_id}", status_code=200)
 def update_stage_gate_row_endpoint(row_id: int, body: StageGateRowUpdateBody):
     import db as _db
