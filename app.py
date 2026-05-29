@@ -1111,8 +1111,8 @@ def export_plan_backend_data(plan_id: str):
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        pd.DataFrame(rows).to_excel(writer, sheet_name="Sheet1", index=False)
         pd.DataFrame([plan]).to_excel(writer, sheet_name="Plan", index=False)
-        pd.DataFrame(rows).to_excel(writer, sheet_name="Rows", index=False)
         pd.DataFrame(_flatten_metric_rows(metrics)).to_excel(
             writer,
             sheet_name="Metrics",
