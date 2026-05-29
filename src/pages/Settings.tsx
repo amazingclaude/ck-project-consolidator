@@ -5,6 +5,7 @@ import { deleteStageGatePlan } from '../api/portfolioApi'
 
 export default function Settings() {
   const navigate = useNavigate()
+  const [activeModule, setActiveModule] = useState<'data-deletion' | null>(null)
   const [deleteYear, setDeleteYear] = useState(String(new Date().getFullYear()))
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -52,7 +53,10 @@ export default function Settings() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         <button
           type="button"
-          onClick={() => navigate('/settings/data-ingestion')}
+          onClick={() => {
+            setActiveModule(null)
+            navigate('/settings/data-ingestion')
+          }}
           className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 text-left hover:border-emerald-300 hover:shadow-md transition-all"
         >
           <span className="w-11 h-11 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center mb-4">
@@ -63,8 +67,25 @@ export default function Settings() {
             Upload and manage source files for project consolidation workflows.
           </p>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveModule('data-deletion')}
+          className={`bg-white border rounded-xl shadow-sm p-5 text-left hover:border-red-300 hover:shadow-md transition-all ${
+            activeModule === 'data-deletion' ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-200'
+          }`}
+        >
+          <span className="w-11 h-11 rounded-lg bg-red-100 text-red-700 flex items-center justify-center mb-4">
+            <Trash2 size={22} />
+          </span>
+          <h2 className="text-lg font-bold text-gray-900">Data Deletion</h2>
+          <p className="mt-2 text-sm text-gray-500 leading-relaxed">
+            Delete uploaded data that should no longer be used by portfolio planning workflows.
+          </p>
+        </button>
       </div>
 
+      {activeModule === 'data-deletion' && (
       <section className="mt-8 max-w-3xl bg-white border border-gray-200 rounded-xl shadow-sm p-6">
         <div className="flex items-start gap-4 mb-6">
           <span className="w-11 h-11 rounded-lg bg-red-100 text-red-700 flex items-center justify-center shrink-0">
@@ -150,6 +171,7 @@ export default function Settings() {
           )}
         </div>
       </section>
+      )}
     </div>
   )
 }
