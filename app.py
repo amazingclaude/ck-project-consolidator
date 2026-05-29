@@ -1058,6 +1058,91 @@ def get_plan_capex_incurred(plan_id: str):
     return compute_incurred_capex_from_rows(rows, target_month_1=target_month_1)
 
 
+def _safe_download_name(name: str, fallback: str) -> str:
+    cleaned = "".join(c if c.isalnum() or c in (" ", "-", "_") else "_" for c in name)
+    cleaned = "_".join(cleaned.strip().split())
+    return cleaned or fallback
+
+
+def _flatten_metric_rows(metrics: dict) -> list[dict]:
+    rows: list[dict] = []
+
+    def walk(prefix: str, value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                walk(f"{prefix}.{key}" if prefix else str(key), child)
+        else:
+            rows.append({"metric": prefix, "value": value})
+
+    walk("", metrics)
+    return rows
+
+
+def _assumptions_rows() -> list[dict]:
+    rows: list[dict] = []
+
+    def walk(prefix: str, value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                walk(f"{prefix}.{key}" if prefix else str(key), child)
+        elif isinstance(value, list):
+            rows.append({"assumption": prefix, "value": json.dumps(value)})
+        else:
+            rows.append({"assumption": prefix, "value": value})
+
+    walk("", ASSUMPTIONS)
+    return rows
+
+
+@app.get("/api/plans/{plan_id}/export")
+def export_plan_backend_data(plan_id: str):
+    import db as _db
+
+    plan = _db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    rows = _db.get_rows(plan_id)
+    metrics = compute_metrics_from_rows(rows)
+    capex_incurred = compute_incurred_capex_from_rows(
+        rows,
+        target_month_1=f"{plan['planYear']}-01-01",
+    )
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        pd.DataFrame([plan]).to_excel(writer, sheet_name="Plan", index=False)
+        pd.DataFrame(rows).to_excel(writer, sheet_name="Rows", index=False)
+        pd.DataFrame(_flatten_metric_rows(metrics)).to_excel(
+            writer,
+            sheet_name="Metrics",
+            index=False,
+        )
+        pd.DataFrame(capex_incurred["detail"]).to_excel(
+            writer,
+            sheet_name="Capex Detail",
+            index=False,
+        )
+        pd.DataFrame(capex_incurred["monthly_by_type"]).to_excel(
+            writer,
+            sheet_name="Capex Monthly",
+            index=False,
+        )
+        pd.DataFrame(_assumptions_rows()).to_excel(
+            writer,
+            sheet_name="Assumptions",
+            index=False,
+        )
+
+    output.seek(0)
+    filename = f"{_safe_download_name(plan.get('name') or '', plan_id)}_backend_data.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/api/plans/{plan_id}/ai-analysis")
 def get_plan_ai_analysis(plan_id: str):
     """Return the cached AI analysis for a plan (null if not yet generated)."""

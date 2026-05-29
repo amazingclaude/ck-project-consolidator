@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileText, MoreVertical, Eye, Pencil, Archive, Trash2 } from 'lucide-react'
+import { FileText, MoreVertical, Eye, Pencil, Archive, Trash2, Download } from 'lucide-react'
 import type { Plan } from '../context/PlansContext'
 
 interface Props {
@@ -75,6 +75,14 @@ export default function PlanCard({ plan, onEdit, onToggleArchive, onDelete }: Pr
               >
                 <Pencil size={14} /> Modify
               </button>
+              <a
+                href={`/api/plans/${plan.id}/export`}
+                download
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <Download size={14} /> Download Excel
+              </a>
               <button
                 onClick={() => { onToggleArchive(); setMenuOpen(false) }}
                 className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
