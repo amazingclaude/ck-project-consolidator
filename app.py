@@ -63,12 +63,14 @@ with open(_ASSUMPTIONS_PATH) as _f:
 
 TARGET_SOCKET_MONTHS = 18
 METRICS_TARGET_SOCKET_MONTHS = 12
-DEFAULT_CAPEX_TIMING_DAYS = {
+
+FALLBACK_CAPEX_TIMING_DAYS = {
     "bom_before_first_install_midpoint": 30,
     "connection_initial_before_first_install_midpoint": 108,
     "connection_final_after_month_midpoint": 35,
     "installation_tranche_4_after_last_install_midpoint": 49,
 }
+
 
 
 class ChatMessage(BaseModel):
@@ -212,12 +214,14 @@ def upload_mpp_for_conversion(filename: str, content: bytes) -> str:
     return filename
 
 
+
 def get_capex_timing_days() -> dict:
-    timing = ASSUMPTIONS.get("capex_timing_days", {})
+    default_timing = ASSUMPTIONS.get("capex_timing_days", FALLBACK_CAPEX_TIMING_DAYS)
     values = {}
-    for key, default in DEFAULT_CAPEX_TIMING_DAYS.items():
-        raw_value = timing.get(key, default)
-        values[key] = default if raw_value is None else int(raw_value)
+
+    for key, fallback in FALLBACK_CAPEX_TIMING_DAYS.items():
+        raw_value = default_timing.get(key, fallback)
+        values[key] = fallback if raw_value is None else int(raw_value)
     return values
 
 
