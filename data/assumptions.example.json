@@ -10,6 +10,12 @@
     "senior_delivery_manager": 0,
     "delivery_manager": 0
   },
+  "capex_timing_days": {
+    "bom_before_first_install_midpoint": 30,
+    "connection_initial_before_first_install_midpoint": 108,
+    "connection_final_after_month_midpoint": 35,
+    "installation_tranche_4_after_last_install_midpoint": 49
+  },
   
   "notes": {
     "capex_bom_per_socket": "xxx",

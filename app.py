@@ -63,6 +63,12 @@ with open(_ASSUMPTIONS_PATH) as _f:
 
 TARGET_SOCKET_MONTHS = 18
 METRICS_TARGET_SOCKET_MONTHS = 12
+DEFAULT_CAPEX_TIMING_DAYS = {
+    "bom_before_first_install_midpoint": 30,
+    "connection_initial_before_first_install_midpoint": 108,
+    "connection_final_after_month_midpoint": 35,
+    "installation_tranche_4_after_last_install_midpoint": 49,
+}
 
 
 class ChatMessage(BaseModel):
@@ -127,11 +133,15 @@ class StageGateRowUpdateBody(BaseModel):
 
 
 class AssumptionsUpdateBody(BaseModel):
-    senior_delivery_manager: float = Field(gt=0)
-    delivery_manager: float = Field(gt=0)
+    senior_delivery_manager: float = Field(ge=0)
+    delivery_manager: float = Field(ge=0)
     installer_resource_per_site_per_week: float = Field(gt=0)
     avg_sockets_per_sites: float = Field(gt=0)
     asset_value_per_sites: float = Field(ge=0)
+    bom_before_first_install_midpoint: int = Field(ge=0)
+    connection_initial_before_first_install_midpoint: int = Field(ge=0)
+    connection_final_after_month_midpoint: int = Field(ge=0)
+    installation_tranche_4_after_last_install_midpoint: int = Field(ge=0)
 
 
 # ─── Blob storage helpers (Excel files only) ──────────────────────────────────
@@ -200,6 +210,15 @@ def upload_mpp_for_conversion(filename: str, content: bytes) -> str:
     container = get_mpp_converter_input_container_client()
     container.get_blob_client(filename).upload_blob(content, overwrite=True)
     return filename
+
+
+def get_capex_timing_days() -> dict:
+    timing = ASSUMPTIONS.get("capex_timing_days", {})
+    values = {}
+    for key, default in DEFAULT_CAPEX_TIMING_DAYS.items():
+        raw_value = timing.get(key, default)
+        values[key] = default if raw_value is None else int(raw_value)
+    return values
 
 
 # ─── Metrics calculation (from SQL rows + assumptions.json) ───────────────────
@@ -346,6 +365,12 @@ def compute_incurred_capex_from_rows(
         me = _month_end(month_num)
         return ms + pd.Timedelta(days=(me - ms).days / 2)
 
+    timing_days = get_capex_timing_days()
+    bom_days = timing_days["bom_before_first_install_midpoint"]
+    connection_initial_days = timing_days["connection_initial_before_first_install_midpoint"]
+    connection_final_days = timing_days["connection_final_after_month_midpoint"]
+    installation_tranche_4_days = timing_days["installation_tranche_4_after_last_install_midpoint"]
+
     output_rows: list[dict] = []
 
     for _, row in df.iterrows():
@@ -373,40 +398,40 @@ def compute_incurred_capex_from_rows(
             "work_package_name": work_package_name,
         }
 
-        # BOM: 100% at first_midpoint - 30 days
-        bom_date = first_midpoint - pd.Timedelta(days=30)
+        # BOM: 100% before first install month midpoint
+        bom_date = first_midpoint - pd.Timedelta(days=bom_days)
         output_rows.append({
             **base,
             "cost_type": "bom",
             "payment_installment": "full",
-            "offset_days": -30,
+            "offset_days": -bom_days,
             "target_sockets": total_sockets,
             "incurred_month": bom_date.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
             "incurred_cost": float(total_sockets * bom_per_socket),
         })
 
-        # Connection initial: 40% at first_midpoint - 108 days
-        conn_init_date = first_midpoint - pd.Timedelta(days=108)
+        # Connection initial: 40% before first install month midpoint
+        conn_init_date = first_midpoint - pd.Timedelta(days=connection_initial_days)
         output_rows.append({
             **base,
             "cost_type": "connection",
             "payment_installment": "initial_40pct",
-            "offset_days": -108,
+            "offset_days": -connection_initial_days,
             "target_sockets": total_sockets,
             "incurred_month": conn_init_date.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
             "incurred_cost": float(total_sockets * connection_per_socket * 0.40),
         })
 
-        # Connection final: 60% per install month, 35 days after that month's midpoint
+        # Connection final: 60% per install month, after that month's midpoint
         for month_num, monthly_sockets in enumerate(sockets, start=1):
             if monthly_sockets <= 0:
                 continue
-            conn_final_date = _month_midpoint(month_num) + pd.Timedelta(days=35)
+            conn_final_date = _month_midpoint(month_num) + pd.Timedelta(days=connection_final_days)
             output_rows.append({
                 **base,
                 "cost_type": "connection",
                 "payment_installment": "final_60pct",
-                "offset_days": 35,
+                "offset_days": connection_final_days,
                 "target_sockets": monthly_sockets,
                 "incurred_month": conn_final_date.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
                 "incurred_cost": float(monthly_sockets * connection_per_socket * 0.60),
@@ -436,13 +461,13 @@ def compute_incurred_capex_from_rows(
                 "incurred_cost": float(total_sockets * installation_per_socket * payment_pct),
             })
 
-        # Tranche 4: 20% at last install month midpoint + 49 days
-        tranche_4_date = last_midpoint + pd.Timedelta(days=49)
+        # Tranche 4: 20% after last install month midpoint
+        tranche_4_date = last_midpoint + pd.Timedelta(days=installation_tranche_4_days)
         output_rows.append({
             **base,
             "cost_type": "installation",
             "payment_installment": "tranche_4",
-            "offset_days": 49,
+            "offset_days": installation_tranche_4_days,
             "target_sockets": total_sockets,
             "incurred_month": tranche_4_date.to_period("M").to_timestamp().strftime("%Y-%m-%d"),
             "incurred_cost": float(total_sockets * installation_per_socket * 0.20),
@@ -574,7 +599,10 @@ def health():
 
 @app.get("/api/assumptions")
 def get_assumptions():
-    return ASSUMPTIONS
+    return {
+        **ASSUMPTIONS,
+        "capex_timing_days": get_capex_timing_days(),
+    }
 
 
 @app.put("/api/assumptions")
@@ -593,6 +621,13 @@ def update_assumptions(body: AssumptionsUpdateBody):
         "value_per_socket": {
             **ASSUMPTIONS.get("value_per_socket", {}),
             "asset_value_per_socket": asset_value_per_socket,
+        },
+        "capex_timing_days": {
+            **get_capex_timing_days(),
+            "bom_before_first_install_midpoint": body.bom_before_first_install_midpoint,
+            "connection_initial_before_first_install_midpoint": body.connection_initial_before_first_install_midpoint,
+            "connection_final_after_month_midpoint": body.connection_final_after_month_midpoint,
+            "installation_tranche_4_after_last_install_midpoint": body.installation_tranche_4_after_last_install_midpoint,
         },
     }
 

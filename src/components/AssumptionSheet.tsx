@@ -35,6 +35,7 @@ export default function AssumptionSheet({ assumptions, onSave }: Props) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const { value_per_socket: vps, delivery_capacity_sockets_per_year: cap, notes } = assumptions
+  const timing = assumptions.capex_timing_days
   const avgSocketsPerSite = assumptions.avg_sockets_per_sites ?? 5
   const assetValuePerSite = assumptions.asset_value_per_sites ?? vps.asset_value_per_socket * avgSocketsPerSite
 
@@ -106,6 +107,12 @@ export default function AssumptionSheet({ assumptions, onSave }: Props) {
 
               <SectionHeader label="Installer resource" />
               <Row label="Installer Resource per Site per Week" value={`${fmt(assumptions.installer_resource_per_site_per_week)}`} />
+
+              <SectionHeader label="CAPEX timing (days)" />
+              <Row label="BOM before first install midpoint" value={`${fmt(timing.bom_before_first_install_midpoint)}`} />
+              <Row label="Connection initial before first install midpoint" value={`${fmt(timing.connection_initial_before_first_install_midpoint)}`} />
+              <Row label="Connection final after monthly midpoint" value={`${fmt(timing.connection_final_after_month_midpoint)}`} />
+              <Row label="Installation Tranche 4 after last install midpoint" value={`${fmt(timing.installation_tranche_4_after_last_install_midpoint)}`} />
             </tbody>
           </table>
         </div>
@@ -137,6 +144,7 @@ function AssumptionModal({
   const avgSockets = assumptions.avg_sockets_per_sites ?? 5
   const assetValue = assumptions.asset_value_per_sites
     ?? assumptions.value_per_socket.asset_value_per_socket * avgSockets
+  const timing = assumptions.capex_timing_days
 
   const [form, setForm] = useState({
     senior_delivery_manager: String(assumptions.delivery_capacity_sockets_per_year.senior_delivery_manager),
@@ -144,6 +152,10 @@ function AssumptionModal({
     installer_resource_per_site_per_week: String(assumptions.installer_resource_per_site_per_week),
     avg_sockets_per_sites: String(avgSockets),
     asset_value_per_sites: String(assetValue),
+    bom_before_first_install_midpoint: String(timing.bom_before_first_install_midpoint),
+    connection_initial_before_first_install_midpoint: String(timing.connection_initial_before_first_install_midpoint),
+    connection_final_after_month_midpoint: String(timing.connection_final_after_month_midpoint),
+    installation_tranche_4_after_last_install_midpoint: String(timing.installation_tranche_4_after_last_install_midpoint),
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -154,6 +166,10 @@ function AssumptionModal({
     installer_resource_per_site_per_week: Number(form.installer_resource_per_site_per_week),
     avg_sockets_per_sites: Number(form.avg_sockets_per_sites),
     asset_value_per_sites: Number(form.asset_value_per_sites),
+    bom_before_first_install_midpoint: Number(form.bom_before_first_install_midpoint),
+    connection_initial_before_first_install_midpoint: Number(form.connection_initial_before_first_install_midpoint),
+    connection_final_after_month_midpoint: Number(form.connection_final_after_month_midpoint),
+    installation_tranche_4_after_last_install_midpoint: Number(form.installation_tranche_4_after_last_install_midpoint),
   }
   const calculatedAssetValuePerSocket =
     numbers.avg_sockets_per_sites > 0
@@ -174,13 +190,25 @@ function AssumptionModal({
       || !Number.isFinite(numbers.installer_resource_per_site_per_week)
       || !Number.isFinite(numbers.avg_sockets_per_sites)
       || !Number.isFinite(numbers.asset_value_per_sites)
-      || numbers.senior_delivery_manager <= 0
-      || numbers.delivery_manager <= 0
+      || !Number.isFinite(numbers.bom_before_first_install_midpoint)
+      || !Number.isFinite(numbers.connection_initial_before_first_install_midpoint)
+      || !Number.isFinite(numbers.connection_final_after_month_midpoint)
+      || !Number.isFinite(numbers.installation_tranche_4_after_last_install_midpoint)
+      || !Number.isInteger(numbers.bom_before_first_install_midpoint)
+      || !Number.isInteger(numbers.connection_initial_before_first_install_midpoint)
+      || !Number.isInteger(numbers.connection_final_after_month_midpoint)
+      || !Number.isInteger(numbers.installation_tranche_4_after_last_install_midpoint)
+      || numbers.senior_delivery_manager < 0
+      || numbers.delivery_manager < 0
       || numbers.installer_resource_per_site_per_week <= 0
       || numbers.avg_sockets_per_sites <= 0
       || numbers.asset_value_per_sites < 0
+      || numbers.bom_before_first_install_midpoint < 0
+      || numbers.connection_initial_before_first_install_midpoint < 0
+      || numbers.connection_final_after_month_midpoint < 0
+      || numbers.installation_tranche_4_after_last_install_midpoint < 0
     ) {
-      setError('Enter positive numeric values. Asset value per site can be zero.')
+      setError('Enter valid numeric values. Timing days must be whole numbers and can be zero.')
       return
     }
 
@@ -195,7 +223,7 @@ function AssumptionModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <form onSubmit={submit} className="bg-white rounded-xl shadow-xl w-[520px] max-w-[calc(100vw-2rem)] p-6">
+      <form onSubmit={submit} className="bg-white rounded-xl shadow-xl w-[640px] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto p-6">
         <div className="flex items-start justify-between gap-4 mb-5">
           <div>
             <h3 className="text-lg font-bold text-gray-900">Modify Assumptions</h3>
@@ -244,6 +272,32 @@ function AssumptionModal({
             <div className="h-10 flex items-center px-3 bg-gray-50 border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 tabular-nums">
               GBP {Number.isFinite(calculatedAssetValuePerSocket) ? fmt(calculatedAssetValuePerSocket) : '0'}
             </div>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">CAPEX timing days</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <NumberField
+              label="BOM before first install midpoint"
+              value={form.bom_before_first_install_midpoint}
+              onChange={value => setField('bom_before_first_install_midpoint', value)}
+            />
+            <NumberField
+              label="Connection initial before first install midpoint"
+              value={form.connection_initial_before_first_install_midpoint}
+              onChange={value => setField('connection_initial_before_first_install_midpoint', value)}
+            />
+            <NumberField
+              label="Connection final after monthly midpoint"
+              value={form.connection_final_after_month_midpoint}
+              onChange={value => setField('connection_final_after_month_midpoint', value)}
+            />
+            <NumberField
+              label="Installation Tranche 4 after last install midpoint"
+              value={form.installation_tranche_4_after_last_install_midpoint}
+              onChange={value => setField('installation_tranche_4_after_last_install_midpoint', value)}
+            />
           </div>
         </div>
 

@@ -61,6 +61,12 @@ export interface Assumptions {
   installer_resource_per_site_per_week: number
   avg_sockets_per_sites?: number
   asset_value_per_sites?: number
+  capex_timing_days: {
+    bom_before_first_install_midpoint: number
+    connection_initial_before_first_install_midpoint: number
+    connection_final_after_month_midpoint: number
+    installation_tranche_4_after_last_install_midpoint: number
+  }
   payment_schedule: {
     cost_type: string
     cost_column: string
@@ -88,6 +94,10 @@ export interface AssumptionsUpdate {
   installer_resource_per_site_per_week: number
   avg_sockets_per_sites: number
   asset_value_per_sites: number
+  bom_before_first_install_midpoint: number
+  connection_initial_before_first_install_midpoint: number
+  connection_final_after_month_midpoint: number
+  installation_tranche_4_after_last_install_midpoint: number
 }
 
 export async function updateAssumptions(data: AssumptionsUpdate): Promise<Assumptions> {
