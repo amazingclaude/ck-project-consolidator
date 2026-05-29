@@ -193,7 +193,7 @@ export default function PlanDetail() {
           <span className="text-sm">Loading chart data…</span>
         </div>
       ) : rows.length > 0 && capexIncurred ? (
-        <PlanCharts rows={rows} capexIncurred={capexIncurred} planYear={plan.planYear} />
+        <PlanCharts rows={rows} capexIncurred={capexIncurred} planYear={plan.planYear} assumptions={assumptions} />
       ) : null}
 
       {/* AI Analysis */}

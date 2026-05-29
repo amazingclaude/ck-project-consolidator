@@ -5,6 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import type {
+  Assumptions,
   CapexIncurredData,
   CapexIncurredDetailPoint,
   CapexIncurredMonthlyPoint,
@@ -86,6 +87,7 @@ interface Props {
   rows: PlanRow[]
   capexIncurred: CapexIncurredData
   planYear: number
+  assumptions?: Assumptions | null
 }
 
 function formatMonthLabel(value: string) {
@@ -252,8 +254,14 @@ function OffsetCapexChart({
   )
 }
 
-export default function PlanCharts({ rows, capexIncurred, planYear }: Props) {
+export default function PlanCharts({ rows, capexIncurred, planYear, assumptions }: Props) {
   const [filter, setFilter] = useState<FilterState>(DEFAULT_FILTER)
+  const capexTiming = assumptions?.capex_timing_days ?? {
+    bom_before_first_install_midpoint: 30,
+    connection_initial_before_first_install_midpoint: 108,
+    connection_final_after_month_midpoint: 35,
+    installation_tranche_4_after_last_install_midpoint: 49,
+  }
 
   const filteredRows = useMemo(
     () => rows.filter(row => matchesFilter(row, filter)),
@@ -406,21 +414,21 @@ export default function PlanCharts({ rows, capexIncurred, planYear }: Props) {
 
       <OffsetCapexChart
         costType="bom"
-        description="Full BOM cost (100% of total sockets × cost/socket) incurred 30 days before the first installation month."
+        description={`Full BOM cost (100% of total sockets x cost/socket) incurred ${capexTiming.bom_before_first_install_midpoint} days before the first installation month.`}
         title="Monthly BOM Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />
 
       <OffsetCapexChart
         costType="connection"
-        description="Initial payment (40% of total connection cost) incurred 108 days before the midpoint of the first installation month. Final payment (60%) split across each installation month, incurred 35 days after that month's midpoint, proportional to monthly sockets."
+        description={`Initial payment (40% of total connection cost) incurred ${capexTiming.connection_initial_before_first_install_midpoint} days before the midpoint of the first installation month. Final payment (60%) split across each installation month, incurred ${capexTiming.connection_final_after_month_midpoint} days after that month's midpoint, proportional to monthly sockets.`}
         title="Monthly Connection Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />
 
       <OffsetCapexChart
         costType="installation"
-        description="Tranche 1 (25%) at month cumulative sockets reach 25%; Tranche 2 (25%) at 50%; Tranche 3 (30%) at 100%; Tranche 4 (20%) incurred 49 days after the midpoint of the last installation month."
+        description={`Tranche 1 (25%) at month cumulative sockets reach 25%; Tranche 2 (25%) at 50%; Tranche 3 (30%) at 100%; Tranche 4 (20%) incurred ${capexTiming.installation_tranche_4_after_last_install_midpoint} days after the midpoint of the last installation month.`}
         title="Monthly Installation Costs (CAPEX)"
         rows={truncatedCapexDetail}
       />
