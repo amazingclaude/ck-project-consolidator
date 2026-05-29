@@ -93,10 +93,25 @@ export default function PlanDetail() {
   }
 
   const handleAssumptionsSave = async (updates: AssumptionsUpdate) => {
-    const updatedAssumptions = await updateAssumptions(updates)
-    const updatedMetrics = await fetchPlanMetrics(plan.id)
-    setAssumptions(updatedAssumptions)
-    setMetrics(updatedMetrics)
+    setMetricsLoading(true)
+    setRowsLoading(true)
+    setMetricsError(null)
+    try {
+      const updatedAssumptions = await updateAssumptions(updates)
+      const [updatedMetrics, updatedCapexIncurred] = await Promise.all([
+        fetchPlanMetrics(plan.id),
+        fetchCapexIncurred(plan.id),
+      ])
+      setAssumptions(updatedAssumptions)
+      setMetrics(updatedMetrics)
+      setCapexIncurred(updatedCapexIncurred)
+    } catch (e) {
+      setMetricsError(e instanceof Error ? e.message : 'Failed to refresh calculations')
+      throw e
+    } finally {
+      setMetricsLoading(false)
+      setRowsLoading(false)
+    }
   }
 
   return (

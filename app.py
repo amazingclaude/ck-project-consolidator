@@ -234,7 +234,10 @@ def compute_metrics_from_rows(rows: list[dict]) -> dict:
     ]
     max_monthly_sockets = max(monthly_sockets, default=0)
     installer_resource_per_site_per_week = ASSUMPTIONS["installer_resource_per_site_per_week"]
-    max_installer_resource_required = math.ceil((max_monthly_sockets / 5) / 4 * installer_resource_per_site_per_week)
+    avg_sockets_per_site = float(ASSUMPTIONS.get("avg_sockets_per_sites", 5) or 5)
+    max_installer_resource_required = math.ceil(
+        (max_monthly_sockets / avg_sockets_per_site) / 4 * installer_resource_per_site_per_week
+    )
 
     bom_capex = sum(r["target_sockets"] * float(r["capex_bom_per_socket"]) for r in rows)
     installation_capex = sum(r["target_sockets"] * float(r["capex_installation_per_socket"]) for r in rows)
